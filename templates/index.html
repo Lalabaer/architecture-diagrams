@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture Diagram</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+
+    <link rel="stylesheet" href="./app.css" />
+</head>
+
+<body>
+    <header>
+        <div>
+            <h1 style="margin: 0 0 4px 0">Architecture Diagram</h1>
+            <div class="meta">Generated from architecture.json manifests</div>
+        </div>
+
+        <div class="controlsRow" style="min-width: 260px">
+            <div style="min-width: 260px">
+                <div class="meta" style="margin-bottom: 6px">View</div>
+                <select id="viewSelect">
+                    <option value="architecture" selected>Architecture (systems & datastores)</option>
+                    <option value="technical">Technical (includes libraries/tools)</option>
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <div class="layout">
+        <div class="panel">
+            <div class="meta" style="margin-bottom: 6px">Filter by owner team</div>
+
+            <input id="teamSearch" type="text" placeholder="Search teams…" />
+
+            <div class="controlsRow" style="margin-top: 8px">
+                <button class="btn" id="clearTeams" type="button">Clear selection</button>
+            </div>
+
+            <div class="chips" id="selectedTeams"></div>
+
+            <div class="teamList" id="teamList"></div>
+        </div>
+
+        <div class="diagramWrap">
+            <div id="diagram">
+                <pre class="mermaid" id="mermaidSource">flowchart LR</pre>
+            </div>
+            <div class="emptyHint" id="emptyHint"></div>
+        </div>
+    </div>
+
+    <script>
+        // graph data injected by generator
+        window.__ARCH_GRAPH__ = JSON.parse("%%__ARCH_GRAPH_JSON__%%");
+    </script>
+
+    <script type="module">
+        // bundled browser app injected by generator
+        /*%%__BROWSER_BUNDLE__%%*/
+    </script>
+</body>
+
+</html>

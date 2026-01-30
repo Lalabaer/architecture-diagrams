@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "entity": {
+    "id": "architecture-diagrams",
+    "kind": "tool",
+    "name": "Architecture Diagrams Generator",
+    "description": "Generates Mermaid-based architecture diagrams from architecture.json manifests across repositories.",
+    "owner_team": "platform-engineering",
+    "business_critical": false
+  },
+  "dependencies": [
+    {
+      "target": {
+        "id": "nodejs",
+        "kind": "tool"
+      },
+      "purpose": "Execution environment for the CLI."
+    },
+    {
+      "target": {
+        "id": "ajv",
+        "kind": "library"
+      },
+      "relationship": "compile_time",
+      "purpose": "Validates architecture.json files against the JSON Schema."
+    },
+    {
+      "target": {
+        "id": "glob",
+        "kind": "library"
+      },
+      "relationship": "compile_time",
+      "purpose": "Discovers architecture.json files in repositories."
+    },
+    {
+      "target": {
+        "id": "mermaid",
+        "kind": "library"
+      },
+      "relationship": "compile_time",
+      "purpose": "Renders the generated diagrams in the exported HTML page."
+    }
+  ]
+}

@@ -1,0 +1,203 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://example.com/architecture-manifest-1.0.schema.json",
+    "title": "Architecture Manifest",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "entity"
+    ],
+    "properties": {
+        "schema_version": {
+            "type": "string",
+            "enum": [
+                "1.0"
+            ]
+        },
+        "entity": {
+            "type": "object",
+            "required": [
+                "id",
+                "kind"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9-]+$",
+                    "description": "Stable, kebab-case identifier"
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "system",
+                        "library",
+                        "datastore",
+                        "tool"
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "owner_team": {
+                    "type": "string"
+                },
+                "business_critical": {
+                    "type": "boolean",
+                    "description": "Whether this entity is business critical (optional; defaults to false in tooling if omitted)"
+                },
+                "regions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "EU",
+                            "US",
+                            "AP"
+                        ]
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                }
+            },
+            "additionalProperties": false
+        },
+        "dependencies": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/dependency"
+            }
+        }
+    },
+    "additionalProperties": false,
+    "$defs": {
+        "entityRef": {
+            "type": "object",
+            "required": [
+                "id",
+                "kind"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9-]+$"
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "system",
+                        "library",
+                        "datastore",
+                        "tool"
+                    ]
+                }
+            },
+            "additionalProperties": false
+        },
+        "dependency": {
+            "type": "object",
+            "required": [
+                "target"
+            ],
+            "properties": {
+                "target": {
+                    "$ref": "#/$defs/entityRef"
+                },
+                "relationship": {
+                    "type": "string",
+                    "enum": [
+                        "sync_call",
+                        "async_event",
+                        "batch",
+                        "compile_time",
+                        "config",
+                        "data_read",
+                        "data_write",
+                        "unknown"
+                    ],
+                    "description": "Optional relationship type; if omitted, tooling should treat it as 'unknown'."
+                },
+                "sla_impact": {
+                    "type": "string",
+                    "enum": [
+                        "IMMEDIATE",
+                        "AFTER_5_MIN",
+                        "AFTER_30_MIN",
+                        "NO_IMPACT"
+                    ]
+                },
+                "critical": {
+                    "type": "boolean"
+                },
+                "regions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "EU",
+                            "US",
+                            "AP"
+                        ]
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                },
+                "purpose": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": false,
+            "allOf": [
+                {
+                    "if": {
+                        "required": [
+                            "sla_impact"
+                        ],
+                        "properties": {
+                            "sla_impact": {
+                                "enum": [
+                                    "IMMEDIATE",
+                                    "AFTER_5_MIN",
+                                    "AFTER_30_MIN"
+                                ]
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "critical"
+                        ],
+                        "properties": {
+                            "critical": {
+                                "const": true
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": [
+                            "relationship"
+                        ],
+                        "properties": {
+                            "relationship": {
+                                "const": "async_event"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "sla_impact": {
+                                "not": {
+                                    "const": "IMMEDIATE"
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}

@@ -1,0 +1,10 @@
+.gitignore
+Gemfile
+package-lock.json
+yarn.lock
+/.idea
+/__tests__
+/android
+/assets
+/ios
+/node_modules

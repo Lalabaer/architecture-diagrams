@@ -1,0 +1,60 @@
+export type Kind = 'system' | 'library' | 'datastore' | 'tool'
+
+export type Relationship =
+    | 'sync_call'
+    | 'async_event'
+    | 'batch'
+    | 'compile_time'
+    | 'config'
+    | 'data_read'
+    | 'data_write'
+    | 'unknown'
+
+export interface Entity {
+    id: string
+    kind: Kind
+    name?: string
+    description?: string
+    owner_team?: string
+    business_critical?: boolean
+    regions?: Array<'EU' | 'US' | 'AP'>
+}
+
+export interface Dependency {
+    target: { id: string; kind: Kind }
+    relationship?: Relationship
+    sla_impact?: 'IMMEDIATE' | 'AFTER_5_MIN' | 'AFTER_30_MIN' | 'NO_IMPACT'
+    critical?: boolean
+    regions?: Array<'EU' | 'US' | 'AP'>
+    purpose?: string
+}
+
+export interface Manifest {
+    schema_version: '1.0'
+    entity: Entity
+    dependencies?: Dependency[]
+}
+
+export interface GraphNode {
+    uid: string
+    id: string
+    kind: Kind
+    label: string
+    owner_team?: string
+    business_critical?: boolean
+    defined?: boolean
+}
+
+export interface GraphEdge {
+    from: string
+    to: string
+    relationship: Relationship
+    purpose?: string
+    critical?: boolean
+    sla_impact?: string
+}
+
+export interface Graph {
+    nodes: Map<string, GraphNode>
+    edges: GraphEdge[]
+}

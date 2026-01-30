@@ -1,0 +1,124 @@
+body {
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    margin: 0;
+    padding: 16px;
+}
+
+header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.meta {
+    color: #555;
+    font-size: 14px;
+}
+
+.layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 12px;
+}
+
+@media (max-width: 900px) {
+    .layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.panel {
+    border: 1px solid #eee;
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.controlsRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+select,
+input[type="text"] {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    background: white;
+    width: 100%;
+}
+
+#teamSearch {
+    max-width: 240px;
+}
+
+.btn {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    background: white;
+    cursor: pointer;
+}
+
+.chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #ddd;
+    background: #fafafa;
+    border-radius: 999px;
+    padding: 6px 10px;
+    cursor: pointer;
+}
+
+.chipX {
+    color: #888;
+    font-weight: 700;
+}
+
+.teamList {
+    margin-top: 10px;
+    max-height: 420px;
+    overflow: auto;
+    border-top: 1px solid #f1f1f1;
+    padding-top: 10px;
+}
+
+.teamRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 4px;
+    cursor: pointer;
+}
+
+.teamRow input {
+    width: 16px;
+    height: 16px;
+}
+
+.diagramWrap {
+    border: 1px solid #eee;
+    border-radius: 10px;
+    padding: 12px;
+    overflow: auto;
+    min-height: 360px;
+}
+
+.emptyHint {
+    color: #888;
+    font-size: 14px;
+    padding: 12px 0 0 0;
+    display: none;
+}

@@ -1,0 +1,39 @@
+{
+    "name": "architecture-diagrams",
+    "version": "0.1.0",
+    "description": "Generates Mermaid-based architecture diagrams from architecture.json manifests across repositories.",
+    "private": true,
+    "type": "module",
+    "main": "dist/index.js",
+    "bin": "dist/index.js",
+    "scripts": {
+        "build": "tsc",
+        "clean": "rm -rf dist",
+        "dev": "tsx src/index.ts",
+        "examples:basic": "node scripts/generate-basic-examples.mjs",
+        "examples:reset": "node scripts/reset-examples.mjs",
+        "examples:url": "node scripts/generate-url-shortener-examples.mjs",
+        "generate": "architecture-diagrams",
+        "lint": "eslint . --ext .ts,.js,.mjs",
+        "format": "prettier --write ."
+    },
+    "dependencies": {
+        "ajv": "^8.12.0",
+        "commander": "^14.0.2",
+        "glob": "^10.3.10"
+    },
+    "devDependencies": {
+        "@types/node": "^25.0.10",
+        "@typescript-eslint/eslint-plugin": "^7.18.0",
+        "@typescript-eslint/parser": "^7.18.0",
+        "esbuild": "^0.27.2",
+        "eslint": "^8.57.0",
+        "eslint-config-prettier": "^9.1.0",
+        "eslint-plugin-simple-import-sort": "^12.1.1",
+        "prettier": "^3.2.5",
+        "ts-node": "^10.9.2",
+        "tsx": "^4.21.0",
+        "typescript": "^5.3.3"
+    },
+    "packageManager": "yarn@4.12.0+sha256.1fe4e1193cbcd13a48d8f436bb17d3c672b049a5e32a758aab9866a073db1702"
+}
