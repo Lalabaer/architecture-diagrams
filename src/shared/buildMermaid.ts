@@ -87,6 +87,7 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): { mermaid: st
 
     // 4) Build Mermaid
     const lines: string[] = []
+    lines.push("%%{init: {'flowchart': {'nodeSpacing': 40, 'rankSpacing': 80}}}%%")
     lines.push('flowchart LR')
 
     const includedNodes = [...includedUids].map((uid) => nodesByUid.get(uid)).filter(Boolean) as WebNode[]
@@ -94,18 +95,50 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): { mermaid: st
     // stable sort
     includedNodes.sort((a, b) => a.uid.localeCompare(b.uid))
 
+    const nodesByTeam = new Map<string, WebNode[]>()
+
     for (const n of includedNodes) {
-        lines.push(`  ${n.uid}${shape(n.kind)}${label(n)}`)
+        const team = n.owner_team?.trim() || 'Unowned'
+        const list = nodesByTeam.get(team) ?? []
+        list.push(n)
+        nodesByTeam.set(team, list)
+    }
+
+    const teamEntries = [...nodesByTeam.entries()].sort(([a], [b]) => a.localeCompare(b))
+
+    for (const [team, teamNodes] of teamEntries) {
+        const teamId = `team_${team.replace(/[^a-zA-Z0-9_]/g, '_')}`
+        lines.push(`  subgraph ${teamId}["${escapeLabel(team)}"]`)
+
+        for (const n of teamNodes) {
+            lines.push(`    ${n.uid}${shape(n.kind)}${label(n)}`)
+        }
+
+        lines.push('  end')
     }
 
     // edge labels (keep optional, low-noise)
+    const edgeGroups = new Map<string, { from: string; to: string; labels: string[] }>()
+
     for (const e of edges) {
-        const lbl = edgeLabel(e.relationship)
+        const key = `${e.from}||${e.to}`
+        const label = edgeLabel(e.relationship, opts.view)
+        const existing = edgeGroups.get(key)
+
+        if (existing) {
+            if (label && !existing.labels.includes(label)) existing.labels.push(label)
+        } else {
+            edgeGroups.set(key, { from: e.from, to: e.to, labels: label ? [label] : [] })
+        }
+    }
+
+    for (const { from, to, labels } of edgeGroups.values()) {
+        const lbl = labels.join(', ')
 
         if (lbl) {
-            lines.push(`  ${e.from} -- "${escapeLabel(lbl)}" --> ${e.to}`)
+            lines.push(`  ${from} -- "${escapeLabel(lbl)}" --> ${to}`)
         } else {
-            lines.push(`  ${e.from} --> ${e.to}`)
+            lines.push(`  ${from} --> ${to}`)
         }
     }
 
@@ -149,7 +182,11 @@ function closeShape(kind: WebNode['kind']): string {
     }
 }
 
-function edgeLabel(rel?: string): string {
+function edgeLabel(rel: string | undefined, view: View): string {
+    if (view === 'architecture') {
+        return ''
+    }
+
     if (!rel) {
         return ''
     }

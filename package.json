@@ -2,6 +2,7 @@
     "name": "architecture-diagrams",
     "version": "0.1.0",
     "description": "Generates Mermaid-based architecture diagrams from architecture.json manifests across repositories.",
+    "license": "MIT",
     "private": true,
     "type": "module",
     "main": "dist/index.js",
