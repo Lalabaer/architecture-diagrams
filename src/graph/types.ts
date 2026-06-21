@@ -32,6 +32,7 @@ export interface Dependency {
 export interface Manifest {
     schema_version: '1.0'
     entity: Entity
+    entities?: Entity[]
     dependencies?: Dependency[]
 }
 

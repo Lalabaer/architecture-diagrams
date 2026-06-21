@@ -3,23 +3,34 @@
     "$id": "https://example.com/architecture-manifest-1.0.schema.json",
     "title": "Architecture Manifest",
     "type": "object",
-    "required": [
-        "schema_version",
-        "entity"
-    ],
+    "required": ["schema_version", "entity"],
     "properties": {
         "schema_version": {
             "type": "string",
-            "enum": [
-                "1.0"
-            ]
+            "enum": ["1.0"]
         },
         "entity": {
+            "$ref": "#/$defs/entity"
+        },
+        "entities": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/entity"
+            },
+            "description": "Additional entities co-owned/co-located by this manifest. Each item produces a graph node, grouped by owner_team like the primary entity. Use for resources without their own code repo (e.g. AWS infra, SaaS, internal hosted services)."
+        },
+        "dependencies": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/dependency"
+            }
+        }
+    },
+    "additionalProperties": false,
+    "$defs": {
+        "entity": {
             "type": "object",
-            "required": [
-                "id",
-                "kind"
-            ],
+            "required": ["id", "kind"],
             "properties": {
                 "id": {
                     "type": "string",
@@ -28,12 +39,7 @@
                 },
                 "kind": {
                     "type": "string",
-                    "enum": [
-                        "system",
-                        "library",
-                        "datastore",
-                        "tool"
-                    ]
+                    "enum": ["system", "library", "datastore", "tool"]
                 },
                 "name": {
                     "type": "string"
@@ -52,11 +58,7 @@
                     "type": "array",
                     "items": {
                         "type": "string",
-                        "enum": [
-                            "EU",
-                            "US",
-                            "AP"
-                        ]
+                        "enum": ["EU", "US", "AP"]
                     },
                     "minItems": 1,
                     "uniqueItems": true
@@ -64,21 +66,9 @@
             },
             "additionalProperties": false
         },
-        "dependencies": {
-            "type": "array",
-            "items": {
-                "$ref": "#/$defs/dependency"
-            }
-        }
-    },
-    "additionalProperties": false,
-    "$defs": {
         "entityRef": {
             "type": "object",
-            "required": [
-                "id",
-                "kind"
-            ],
+            "required": ["id", "kind"],
             "properties": {
                 "id": {
                     "type": "string",
@@ -86,21 +76,14 @@
                 },
                 "kind": {
                     "type": "string",
-                    "enum": [
-                        "system",
-                        "library",
-                        "datastore",
-                        "tool"
-                    ]
+                    "enum": ["system", "library", "datastore", "tool"]
                 }
             },
             "additionalProperties": false
         },
         "dependency": {
             "type": "object",
-            "required": [
-                "target"
-            ],
+            "required": ["target"],
             "properties": {
                 "target": {
                     "$ref": "#/$defs/entityRef"
@@ -121,12 +104,7 @@
                 },
                 "sla_impact": {
                     "type": "string",
-                    "enum": [
-                        "IMMEDIATE",
-                        "AFTER_5_MIN",
-                        "AFTER_30_MIN",
-                        "NO_IMPACT"
-                    ]
+                    "enum": ["IMMEDIATE", "AFTER_5_MIN", "AFTER_30_MIN", "NO_IMPACT"]
                 },
                 "critical": {
                     "type": "boolean"
@@ -135,11 +113,7 @@
                     "type": "array",
                     "items": {
                         "type": "string",
-                        "enum": [
-                            "EU",
-                            "US",
-                            "AP"
-                        ]
+                        "enum": ["EU", "US", "AP"]
                     },
                     "minItems": 1,
                     "uniqueItems": true
@@ -152,23 +126,15 @@
             "allOf": [
                 {
                     "if": {
-                        "required": [
-                            "sla_impact"
-                        ],
+                        "required": ["sla_impact"],
                         "properties": {
                             "sla_impact": {
-                                "enum": [
-                                    "IMMEDIATE",
-                                    "AFTER_5_MIN",
-                                    "AFTER_30_MIN"
-                                ]
+                                "enum": ["IMMEDIATE", "AFTER_5_MIN", "AFTER_30_MIN"]
                             }
                         }
                     },
                     "then": {
-                        "required": [
-                            "critical"
-                        ],
+                        "required": ["critical"],
                         "properties": {
                             "critical": {
                                 "const": true
@@ -178,9 +144,7 @@
                 },
                 {
                     "if": {
-                        "required": [
-                            "relationship"
-                        ],
+                        "required": ["relationship"],
                         "properties": {
                             "relationship": {
                                 "const": "async_event"
