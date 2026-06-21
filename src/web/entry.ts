@@ -1,3 +1,3 @@
-import { boot } from "./app.js"
+import { boot } from './app.js'
 
 boot()
