@@ -54,6 +54,14 @@
                     "type": "boolean",
                     "description": "Whether this entity is business critical (optional; defaults to false in tooling if omitted)"
                 },
+                "in_production": {
+                    "type": "boolean",
+                    "description": "Whether this entity is deployed and used in production (optional)"
+                },
+                "deprecated": {
+                    "type": "boolean",
+                    "description": "Whether this entity is sunsetting or deprecated and should be removed from the architecture (optional)"
+                },
                 "regions": {
                     "type": "array",
                     "items": {

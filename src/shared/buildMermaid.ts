@@ -23,7 +23,11 @@ export interface BuildOptions {
  *   - include edges FROM selected-team nodes only
  *   - include target nodes of those edges (even if owned by other teams), but DO NOT expand beyond that
  */
-export function buildMermaid(graph: WebGraph, opts: BuildOptions): { mermaid: string; isEmpty: boolean } {
+export function buildMermaid(graph: WebGraph, opts: BuildOptions): {
+    mermaid: string
+    isEmpty: boolean
+    includedNodes: WebNode[]
+} {
     const selectedTeams = (opts.selectedTeams ?? []).filter(Boolean)
     const hasTeamFilter = selectedTeams.length > 0
     const teamSet = new Set(selectedTeams)
@@ -179,7 +183,7 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): { mermaid: st
     const mermaid = lines.join('\n')
     const isEmpty = includedNodes.length === 0
 
-    return { mermaid, isEmpty }
+    return { mermaid, isEmpty, includedNodes }
 }
 
 function shape(kind: WebNode['kind']): string {
@@ -197,10 +201,7 @@ function shape(kind: WebNode['kind']): string {
 
 function nodeLabel(n: WebNode): string {
     const title = n.name ? n.name : n.id
-    const owner = n.owner_team ? `Owner ${n.owner_team}` : ''
-    const critical = n.business_critical ? 'Business Critical' : ''
-    const raw = [title, owner, critical].filter(Boolean).join(' ')
-    const safe = sanitizeLabel(raw) || 'Unknown'
+    const safe = sanitizeLabel(title) || 'Unknown'
     return `${safe}${closeShape(n.kind)}`
 }
 
