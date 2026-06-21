@@ -14,6 +14,7 @@
         "examples:basic": "node scripts/generate-basic-examples.mjs",
         "examples:reset": "node scripts/reset-examples.mjs",
         "examples:url": "node scripts/generate-url-shortener-examples.mjs",
+        "docs:screenshots": "yarn build && yarn examples:basic && yarn examples:url && yarn dev --input examples/basic --output dist/screenshots/basic && yarn dev --input examples/url-shortener --output dist/screenshots/url-shortener && node scripts/capture-doc-screenshots.mjs",
         "generate": "architecture-diagrams",
         "lint": "eslint . --ext .ts,.js,.mjs",
         "format": "prettier --write ."
@@ -32,6 +33,7 @@
         "eslint-config-prettier": "^9.1.0",
         "eslint-plugin-simple-import-sort": "^12.1.1",
         "prettier": "^3.2.5",
+        "puppeteer-core": "^25.1.0",
         "ts-node": "^10.9.2",
         "tsx": "^4.21.0",
         "typescript": "^5.3.3"

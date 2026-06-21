@@ -60,3 +60,6 @@ logs
 # generated native folders
 /ios
 /android
+
+# Generated example manifests (yarn dev -- examples basic|url-shortener)
+examples/
