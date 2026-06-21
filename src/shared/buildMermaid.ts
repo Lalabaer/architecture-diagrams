@@ -1,8 +1,18 @@
-import type { View, WebEdge, WebGraph, WebNode } from './graph.js'
+import type { Kind, View, WebEdge, WebGraph, WebNode } from './graph.js'
+
+/** Root Mermaid flowchart direction; changes how team swimlanes use screen space. */
+export type DiagramLayout = 'tb' | 'lr'
 
 export interface BuildOptions {
     view: View
     selectedTeams?: string[] // empty/undefined => no team filter
+    /** Root graph direction. Default: tb (wide horizontal team bands). */
+    diagramLayout?: DiagramLayout
+    /**
+     * Which node kinds to include. System is always included.
+     * Omit to show all kinds allowed by the current {@link BuildOptions.view}.
+     */
+    visibleKinds?: Set<Kind>
 }
 
 /**
@@ -18,10 +28,18 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): { mermaid: st
     const hasTeamFilter = selectedTeams.length > 0
     const teamSet = new Set(selectedTeams)
 
-    const kindAllowed = (k: WebNode['kind']) => {
-        if (opts.view === 'architecture') return k === 'system' || k === 'datastore'
-        return true // technical
+    const viewKinds: Kind[] =
+        opts.view === 'architecture' ? ['system', 'datastore'] : ['system', 'datastore', 'library', 'tool']
+
+    const visibleSet = opts.visibleKinds !== undefined ? new Set<Kind>(opts.visibleKinds) : new Set<Kind>(viewKinds)
+    visibleSet.add('system')
+    for (const k of [...visibleSet]) {
+        if (!viewKinds.includes(k)) {
+            visibleSet.delete(k)
+        }
     }
+
+    const kindVisible = (k: Kind) => viewKinds.includes(k) && visibleSet.has(k)
 
     const nodesByUid = new Map<string, WebNode>()
 
@@ -38,7 +56,7 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): { mermaid: st
             return false
         }
 
-        if (!kindAllowed(from.kind) || !kindAllowed(to.kind)) {
+        if (!kindVisible(from.kind) || !kindVisible(to.kind)) {
             return false
         }
 
@@ -55,7 +73,7 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): { mermaid: st
     if (!hasTeamFilter) {
         // include all nodes that are referenced by remaining edges + any standalone nodes of allowed kinds
         for (const n of graph.nodes) {
-            if (kindAllowed(n.kind)) {
+            if (kindVisible(n.kind)) {
                 includedUids.add(n.uid)
             }
         }
@@ -67,7 +85,7 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): { mermaid: st
     } else {
         // include all selected-team nodes of allowed kinds
         for (const n of graph.nodes) {
-            if (!kindAllowed(n.kind)) {
+            if (!kindVisible(n.kind)) {
                 continue
             }
 
@@ -87,8 +105,19 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): { mermaid: st
 
     // 4) Build Mermaid
     const lines: string[] = []
-    lines.push("%%{init: {'flowchart': {'nodeSpacing': 40, 'rankSpacing': 80}}}%%")
-    lines.push('flowchart LR')
+    const layout: DiagramLayout = opts.diagramLayout ?? 'tb'
+
+    if (layout === 'tb') {
+        lines.push(
+            "%%{init: {'securityLevel': 'strict', 'flowchart': {'useMaxWidth': false, 'htmlLabels': false, 'nodeSpacing': 48, 'rankSpacing': 72, 'padding': 20}}}%%",
+        )
+        lines.push('flowchart TB')
+    } else {
+        lines.push(
+            "%%{init: {'securityLevel': 'strict', 'flowchart': {'useMaxWidth': false, 'htmlLabels': false, 'nodeSpacing': 40, 'rankSpacing': 80, 'padding': 16}}}%%",
+        )
+        lines.push('flowchart LR')
+    }
 
     const includedNodes = [...includedUids].map((uid) => nodesByUid.get(uid)).filter(Boolean) as WebNode[]
 
@@ -108,10 +137,15 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): { mermaid: st
 
     for (const [team, teamNodes] of teamEntries) {
         const teamId = `team_${team.replace(/[^a-zA-Z0-9_]/g, '_')}`
-        lines.push(`  subgraph ${teamId}["${escapeLabel(team)}"]`)
+        lines.push(`  subgraph ${teamId}["${sanitizeLabel(team)}"]`)
+
+        const useInnerLR = layout === 'tb' || teamNodes.length >= 6
+        if (useInnerLR) {
+            lines.push('    direction LR')
+        }
 
         for (const n of teamNodes) {
-            lines.push(`    ${n.uid}${shape(n.kind)}${label(n)}`)
+            lines.push(`    ${n.uid}${shape(n.kind)}${nodeLabel(n)}`)
         }
 
         lines.push('  end')
@@ -122,29 +156,28 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): { mermaid: st
 
     for (const e of edges) {
         const key = `${e.from}||${e.to}`
-        const label = edgeLabel(e.relationship, opts.view)
+        const edgeLbl = edgeLabel(e.relationship, opts.view)
         const existing = edgeGroups.get(key)
 
         if (existing) {
-            if (label && !existing.labels.includes(label)) existing.labels.push(label)
+            if (edgeLbl && !existing.labels.includes(edgeLbl)) existing.labels.push(edgeLbl)
         } else {
-            edgeGroups.set(key, { from: e.from, to: e.to, labels: label ? [label] : [] })
+            edgeGroups.set(key, { from: e.from, to: e.to, labels: edgeLbl ? [edgeLbl] : [] })
         }
     }
 
     for (const { from, to, labels } of edgeGroups.values()) {
-        const lbl = labels.join(', ')
+        const lbl = labels.join(' ')
 
         if (lbl) {
-            lines.push(`  ${from} -- "${escapeLabel(lbl)}" --> ${to}`)
+            lines.push(`  ${from} -- "${sanitizeLabel(lbl)}" --> ${to}`)
         } else {
             lines.push(`  ${from} --> ${to}`)
         }
     }
 
     const mermaid = lines.join('\n')
-    const isEmpty =
-        includedNodes.length === 0 || (includedNodes.length > 0 && edges.length === 0 && opts.view === 'architecture')
+    const isEmpty = includedNodes.length === 0
 
     return { mermaid, isEmpty }
 }
@@ -162,11 +195,13 @@ function shape(kind: WebNode['kind']): string {
     }
 }
 
-function label(n: WebNode): string {
+function nodeLabel(n: WebNode): string {
     const title = n.name ? n.name : n.id
-    const owner = n.owner_team ? `<br/>Owner: ${n.owner_team}` : ''
-    const critical = n.business_critical ? `<br/><b>Business Critical</b>` : ''
-    return `${escapeLabel(title)}${owner}${critical}${closeShape(n.kind)}`
+    const owner = n.owner_team ? `Owner ${n.owner_team}` : ''
+    const critical = n.business_critical ? 'Business Critical' : ''
+    const raw = [title, owner, critical].filter(Boolean).join(' ')
+    const safe = sanitizeLabel(raw) || 'Unknown'
+    return `${safe}${closeShape(n.kind)}`
 }
 
 function closeShape(kind: WebNode['kind']): string {
@@ -195,9 +230,12 @@ function edgeLabel(rel: string | undefined, view: View): string {
         return ''
     }
 
-    return rel
+    return sanitizeLabel(rel.replace(/_/g, ' '))
 }
 
-function escapeLabel(s: string): string {
-    return s.replace(/"/g, '\\"')
+function sanitizeLabel(s: string): string {
+    return s
+        .replace(/[^a-zA-Z0-9 ]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
 }

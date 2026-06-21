@@ -1,5 +1,12 @@
 body {
-    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    font-family:
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        Segoe UI,
+        Roboto,
+        Helvetica,
+        Arial;
     margin: 0;
     padding: 16px;
 }
@@ -22,6 +29,7 @@ header {
     display: grid;
     grid-template-columns: 320px 1fr;
     gap: 12px;
+    align-items: start;
 }
 
 @media (max-width: 900px) {
@@ -34,6 +42,19 @@ header {
     border: 1px solid #eee;
     border-radius: 10px;
     padding: 12px;
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 88px);
+    min-height: 480px;
+    overflow: hidden;
+}
+
+.panelTop {
+    flex-shrink: 0;
+}
+
+.panelBottom {
+    flex-shrink: 0;
 }
 
 .controlsRow {
@@ -44,7 +65,7 @@ header {
 }
 
 select,
-input[type="text"] {
+input[type='text'] {
     padding: 8px 10px;
     border-radius: 8px;
     border: 1px solid #ddd;
@@ -69,6 +90,16 @@ input[type="text"] {
     gap: 8px;
     flex-wrap: wrap;
     margin-top: 8px;
+    min-height: 76px;
+    max-height: 76px;
+    overflow-y: auto;
+    align-content: flex-start;
+    align-items: flex-start;
+}
+
+.chips--empty {
+    align-items: center;
+    align-content: center;
 }
 
 .chip {
@@ -87,10 +118,15 @@ input[type="text"] {
     font-weight: 700;
 }
 
+.chipPlaceholder {
+    width: 100%;
+}
+
 .teamList {
+    flex: 1;
+    min-height: 0;
     margin-top: 10px;
-    max-height: 420px;
-    overflow: auto;
+    overflow-y: auto;
     border-top: 1px solid #f1f1f1;
     padding-top: 10px;
 }
@@ -108,12 +144,31 @@ input[type="text"] {
     height: 16px;
 }
 
+.panelSection {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #f1f1f1;
+}
+
+.panelSection--first {
+    margin-top: 0;
+}
+
 .diagramWrap {
-    border: 1px solid #eee;
-    border-radius: 10px;
-    padding: 12px;
     overflow: auto;
-    min-height: 360px;
+    height: calc(100vh - 88px);
+    min-height: 480px;
+    width: 100%;
+    min-width: 0; /* grid child: allow this column to shrink so overflow scroll works */
+}
+
+#diagram {
+    min-height: 100%;
+}
+
+/* Mermaid often sets a max-width on the SVG; allow wide layouts to use horizontal space + scroll. */
+.diagramWrap svg {
+    max-width: none !important;
 }
 
 .emptyHint {

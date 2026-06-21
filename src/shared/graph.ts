@@ -12,6 +12,12 @@ export type Relationship =
 
 export type View = 'architecture' | 'technical'
 
+/** Kinds that can appear in each diagram view (used for the type filter UI). */
+export const KINDS_BY_VIEW: Record<View, Kind[]> = {
+    architecture: ['system', 'datastore'],
+    technical: ['system', 'datastore', 'library', 'tool'],
+}
+
 export interface WebNode {
     uid: string // unique stable node id for mermaid, e.g. "system_playback-service"
     id: string // raw id, e.g. "playback-service"
