@@ -6,14 +6,31 @@ import path from 'path'
 import { toWebGraph } from './adapters/toWebGraph.js'
 import { buildGraph } from './graph/buildGraph.js'
 import { discoverManifests } from './ingest/discoverManifests.js'
-import { loadAndValidateManifest } from './ingest/loadManifest.js'
+import { loadManifests } from './ingest/loadManifest.js'
 import { writeOutputs } from './output/writeFiles.js'
 import { renderMermaid } from './render/mermaid/renderMermaid.js'
 import { renderHtmlFromTemplate } from './render/renderHtml.js'
 import { runNodeScript } from './utils/runNodeScript.js'
 
 function isMermaidEmpty(diagram: string): boolean {
-    return diagram.trim() === 'flowchart LR'
+    // Match generator output: empty charts are init + flowchart keyword only (no teams, no edges).
+    return !diagram.includes('subgraph') && !diagram.includes('-->')
+}
+
+function formatManifestPath(filePath: string, baseDir: string): string {
+    const relative = path.relative(baseDir, filePath)
+    return relative.startsWith('..') ? filePath : relative
+}
+
+function printSkippedManifestWarnings(failed: Array<{ file: string; error: string }>, baseDir: string): void {
+    if (failed.length === 0) {
+        return
+    }
+
+    console.warn(`Warning: Skipped ${failed.length} manifest file(s) due to errors:`)
+    for (const { file, error } of failed) {
+        console.warn(`- ${formatManifestPath(file, baseDir)}: ${error.replace(/\n/g, '; ')}`)
+    }
 }
 
 export async function runCli(argv: string[]): Promise<void> {
@@ -61,11 +78,13 @@ export async function runCli(argv: string[]): Promise<void> {
             throw new Error(`No architecture.json files found under: ${inputDir}`)
         }
 
-        const manifests: any[] = []
+        const { manifests, failed } = await loadManifests(files)
 
-        for (const f of files) {
-            manifests.push(await loadAndValidateManifest(f))
+        if (manifests.length === 0) {
+            throw new Error(`No valid architecture manifests found under: ${inputDir}`)
         }
+
+        printSkippedManifestWarnings(failed, inputDir)
 
         const internalGraph = buildGraph(manifests)
         const webGraph = toWebGraph(internalGraph)
@@ -91,7 +110,12 @@ export async function runCli(argv: string[]): Promise<void> {
 - ${path.join(outDir, 'architecture.mmd')}
 - ${path.join(outDir, 'technical.mmd')}
 `)
-        console.log(`Manifests: ${files.length}`)
+        const skippedCount = files.length - manifests.length
+        if (skippedCount > 0) {
+            console.log(`Manifests: ${manifests.length} loaded (${skippedCount} skipped)`)
+        } else {
+            console.log(`Manifests: ${manifests.length}`)
+        }
     })
 
     await program.parseAsync(argv)
