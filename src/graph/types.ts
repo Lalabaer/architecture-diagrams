@@ -17,6 +17,8 @@ export interface Entity {
     description?: string
     owner_team?: string
     business_critical?: boolean
+    in_production?: boolean
+    deprecated?: boolean
     regions?: Array<'EU' | 'US' | 'AP'>
 }
 
@@ -41,8 +43,11 @@ export interface GraphNode {
     id: string
     kind: Kind
     label: string
+    description?: string
     owner_team?: string
     business_critical?: boolean
+    in_production?: boolean
+    deprecated?: boolean
     defined?: boolean
 }
 

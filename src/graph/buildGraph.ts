@@ -10,8 +10,11 @@ function nodeFromEntity(entity: Entity): GraphNode {
         id: entity.id,
         kind: entity.kind,
         label: entity.name ?? entity.id,
+        description: entity.description,
         owner_team: entity.owner_team,
         business_critical: entity.business_critical,
+        in_production: entity.in_production,
+        deprecated: entity.deprecated,
         defined: true,
     }
 }

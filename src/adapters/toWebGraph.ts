@@ -40,8 +40,11 @@ export function toWebGraph(internalGraph: any): WebGraph {
                 id: n.id,
                 kind: n.kind,
                 name: n.name ?? n.label,
+                description: n.description,
                 owner_team: n.owner_team,
                 business_critical: n.business_critical,
+                in_production: n.in_production,
+                deprecated: n.deprecated,
             }
         })
         .filter((n): n is WebNode => n !== null)

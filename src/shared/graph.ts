@@ -24,7 +24,10 @@ export interface WebNode {
     kind: Kind
     owner_team?: string
     name?: string
+    description?: string
     business_critical?: boolean
+    in_production?: boolean
+    deprecated?: boolean
 }
 
 export interface WebEdge {

@@ -3,6 +3,8 @@ import { buildMermaid, type DiagramLayout } from '../shared/buildMermaid.js'
 import { getTeams, type Kind, KINDS_BY_VIEW, type View, type WebGraph } from '../shared/graph.js'
 import { kindLabel } from '../shared/nodeIcons.js'
 
+import { attachNodeTooltips } from './nodeTooltips.js'
+
 declare global {
     interface Window {
         __ARCH_GRAPH__?: WebGraph
@@ -263,7 +265,7 @@ async function render() {
     const diagramLayout = currentLayout()
 
     const visibleKinds = getVisibleKinds(view)
-    const { mermaid, isEmpty } = buildMermaid(graph, {
+    const { mermaid, isEmpty, includedNodes } = buildMermaid(graph, {
         view,
         selectedTeams,
         diagramLayout,
@@ -302,6 +304,7 @@ async function render() {
 
         container.innerHTML = svg
         bindFunctions?.(container)
+        attachNodeTooltips(container, includedNodes)
         diagramWrap.scrollLeft = Math.min(scrollLeft, Math.max(0, diagramWrap.scrollWidth - diagramWrap.clientWidth))
         diagramWrap.scrollTop = Math.min(scrollTop, Math.max(0, diagramWrap.scrollHeight - diagramWrap.clientHeight))
     } catch (e: unknown) {
