@@ -12,7 +12,7 @@ const ajv = new Ajv({ allErrors: true, strict: false })
 
 let validateFn: ReturnType<typeof ajv.compile> | null = null
 
-export async function validateManifestOrThrow(manifestPath: string, manifest: unknown): Promise<Manifest> {
+async function getValidateFn(): Promise<NonNullable<typeof validateFn>> {
     if (!validateFn) {
         const moduleDir = path.dirname(fileURLToPath(import.meta.url))
         const schemaPath = path.resolve(moduleDir, '../../schemas/architecture-manifest-1.0.schema.json')
@@ -20,14 +20,35 @@ export async function validateManifestOrThrow(manifestPath: string, manifest: un
         validateFn = ajv.compile(schema)
     }
 
-    const ok = validateFn(manifest)
+    return validateFn
+}
+
+function formatValidationErrors(errors: ErrorObject[] | null | undefined): string {
+    return (
+        errors?.map((e: ErrorObject) => `${e.instancePath || '(root)'} ${e.message}`).join('\n') ??
+        'Unknown validation error'
+    )
+}
+
+export async function validateManifest(
+    manifest: unknown,
+): Promise<{ ok: true; manifest: Manifest } | { ok: false; error: string }> {
+    const validate = await getValidateFn()
+    const ok = validate(manifest)
 
     if (!ok) {
-        const errors = validateFn.errors
-            ?.map((e: ErrorObject) => `${e.instancePath || '(root)'} ${e.message}`)
-            .join('\n')
-        throw new Error(`Schema validation failed for ${manifestPath}:\n${errors}`)
+        return { ok: false, error: formatValidationErrors(validate.errors) }
     }
 
-    return manifest as Manifest
+    return { ok: true, manifest: manifest as Manifest }
+}
+
+export async function validateManifestOrThrow(manifestPath: string, manifest: unknown): Promise<Manifest> {
+    const result = await validateManifest(manifest)
+
+    if (!result.ok) {
+        throw new Error(`Schema validation failed for ${manifestPath}:\n${result.error}`)
+    }
+
+    return result.manifest
 }

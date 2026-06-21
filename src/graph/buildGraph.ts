@@ -1,11 +1,32 @@
-import type { Graph, GraphEdge, GraphNode, Manifest } from './types.js'
+import type { Entity, Graph, GraphEdge, GraphNode, Manifest } from './types.js'
 
 function uid(kind: string, id: string) {
     return `${kind}:${id}`
 }
 
-function labelFor(m: Manifest): string {
-    return m.entity.name ?? m.entity.id
+function nodeFromEntity(entity: Entity): GraphNode {
+    return {
+        uid: uid(entity.kind, entity.id),
+        id: entity.id,
+        kind: entity.kind,
+        label: entity.name ?? entity.id,
+        owner_team: entity.owner_team,
+        business_critical: entity.business_critical,
+        defined: true,
+    }
+}
+
+function upsertEntityNode(nodes: Map<string, GraphNode>, entity: Entity): void {
+    const next = nodeFromEntity(entity)
+    const existing = nodes.get(next.uid)
+
+    // Stub targets from dependencies are created without owner_team. When the real
+    // manifest for that entity appears later, merge so swimlanes and labels stay correct.
+    if (!existing) {
+        nodes.set(next.uid, next)
+    } else {
+        nodes.set(next.uid, { ...existing, ...next })
+    }
 }
 
 export function buildGraph(manifests: Manifest[]): Graph {
@@ -13,19 +34,16 @@ export function buildGraph(manifests: Manifest[]): Graph {
     const edges: GraphEdge[] = []
 
     for (const m of manifests) {
-        const nUid = uid(m.entity.kind, m.entity.id)
+        upsertEntityNode(nodes, m.entity)
 
-        if (!nodes.has(nUid)) {
-            nodes.set(nUid, {
-                uid: nUid,
-                id: m.entity.id,
-                kind: m.entity.kind,
-                label: labelFor(m),
-                owner_team: m.entity.owner_team,
-                business_critical: m.entity.business_critical,
-                defined: true,
-            })
+        // Co-owned / co-located entities declared inline in this manifest. Useful for
+        // resources that don't have their own code repo (AWS infra, SaaS, internal hosted
+        // services). Each is treated as a fully defined node, just like m.entity.
+        for (const e of m.entities ?? []) {
+            upsertEntityNode(nodes, e)
         }
+
+        const fromUid = uid(m.entity.kind, m.entity.id)
 
         for (const dep of m.dependencies ?? []) {
             const tUid = uid(dep.target.kind, dep.target.id)
@@ -41,7 +59,7 @@ export function buildGraph(manifests: Manifest[]): Graph {
             }
 
             edges.push({
-                from: nUid,
+                from: fromUid,
                 to: tUid,
                 relationship: dep.relationship ?? 'unknown',
                 purpose: dep.purpose,
