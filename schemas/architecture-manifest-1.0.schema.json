@@ -50,6 +50,11 @@
                 "owner_team": {
                     "type": "string"
                 },
+                "diagram_tier": {
+                    "type": "string",
+                    "enum": ["top", "main"],
+                    "description": "Diagram swimlane row in wide (TB) layout. Use top for aggregate product or surface nodes whose team band should render above the main horizontal team row. Defaults to main when omitted."
+                },
                 "business_critical": {
                     "type": "boolean",
                     "description": "Whether this entity is business critical (optional; defaults to false in tooling if omitted)"
