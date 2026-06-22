@@ -299,8 +299,6 @@ async function render() {
 
     const container = qs<HTMLDivElement>('#diagram')
     const diagramScroll = qs<HTMLDivElement>('#diagramScroll')
-    const scrollLeft = diagramScroll.scrollLeft
-    const scrollTop = diagramScroll.scrollTop
     const generation = ++renderGeneration
 
     if (isEmpty) {
@@ -340,7 +338,6 @@ async function render() {
             container.querySelector('svg') ?? container,
             includedNodes,
             includedEdges,
-            diagramLayout,
         )
         detachTeamClusterFilter = attachTeamClusterFilter(
             container.querySelector('svg') ?? container,
@@ -350,14 +347,8 @@ async function render() {
         )
         resetDiagramZoomMeasurement()
         applyDiagramZoom(true)
-        diagramScroll.scrollLeft = Math.min(
-            scrollLeft,
-            Math.max(0, diagramScroll.scrollWidth - diagramScroll.clientWidth),
-        )
-        diagramScroll.scrollTop = Math.min(
-            scrollTop,
-            Math.max(0, diagramScroll.scrollHeight - diagramScroll.clientHeight),
-        )
+        diagramScroll.scrollLeft = 0
+        diagramScroll.scrollTop = 0
     } catch (e: unknown) {
         if (generation === renderGeneration) {
             console.error('Mermaid render error:', e)

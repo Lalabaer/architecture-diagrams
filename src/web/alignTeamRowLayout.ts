@@ -1,50 +1,25 @@
-import { teamClusterId } from '../shared/buildMermaid.js'
-import type { WebEdge, WebNode } from '../shared/graph.js'
-import { buildLayoutEdgeIdMap, parseEdgeEndpoints } from '../shared/mermaidEdges.js'
+import { KIND_LAYERS, teamClusterId } from '../shared/buildMermaid.js'
+import type { Kind, WebEdge, WebNode } from '../shared/graph.js'
+import { parseEdgeEndpoints } from '../shared/mermaidEdges.js'
 
 const ROW_GAP_BELOW_TOP = 24
-const MIN_TEAM_GAP = 48
+const TEAM_ROW_GAP = 44
+const MAX_TEAM_ROW_WIDTH = 2400
+const MIN_TEAM_GAP = 28
+const KIND_LAYER_GAP = 36
+const NODE_H_GAP = 24
+const TEAM_PAD_X = 12
+const TEAM_PAD_Y = 16
+const TEAM_LABEL_HEIGHT = 24
+const EDGE_LANE_GAP = 12
+const DIAGRAM_ORIGIN_X = 0
+const DIAGRAM_ORIGIN_Y = 12
+const EDGE_TARGET_GAP = 2
 
-interface Shift {
-    dx: number
-    dy: number
-}
-
-interface EdgeSnapshot {
-    d: string
-    transform: string | null
-}
-
-const ZERO_SHIFT: Shift = { dx: 0, dy: 0 }
+type ExitSide = 'right' | 'left' | 'bottom' | 'top'
 
 function isTopRowTeam(teamNodes: WebNode[]): boolean {
     return teamNodes.length > 0 && teamNodes.every((n) => n.diagram_tier === 'top')
-}
-
-function rowTeamsFromNodes(nodes: WebNode[]): Map<string, WebNode[]> {
-    const byTeam = new Map<string, WebNode[]>()
-
-    for (const node of nodes) {
-        const team = node.owner_team?.trim()
-
-        if (!team) {
-            continue
-        }
-
-        const list = byTeam.get(team) ?? []
-        list.push(node)
-        byTeam.set(team, list)
-    }
-
-    const rowTeams = new Map<string, WebNode[]>()
-
-    for (const [team, teamNodes] of byTeam) {
-        if (!isTopRowTeam(teamNodes)) {
-            rowTeams.set(team, teamNodes)
-        }
-    }
-
-    return rowTeams
 }
 
 function matchesClusterId(renderedId: string, expectedId: string): boolean {
@@ -77,98 +52,142 @@ function findTeamCluster(svgRoot: SVGSVGElement, clusterId: string): SVGGElement
     return null
 }
 
-function clusterTopY(cluster: SVGGElement): number | null {
-    const rect = cluster.querySelector(':scope > rect')
-
-    if (!rect) {
-        return null
-    }
-
-    const y = rect.getAttribute('y')
-
-    if (y !== null) {
-        return parseFloat(y)
-    }
-
-    return (rect as SVGGraphicsElement).getBBox().y
-}
-
-function clusterBottomY(cluster: SVGGElement): number | null {
-    const rect = cluster.querySelector(':scope > rect')
-
-    if (!rect) {
-        return null
-    }
-
-    const y = rect.getAttribute('y')
-    const h = rect.getAttribute('height')
-
-    if (y !== null && h !== null) {
-        return parseFloat(y) + parseFloat(h)
-    }
-
-    const box = (rect as SVGGraphicsElement).getBBox()
-
-    return box.y + box.height
-}
-
-function appendTranslate(element: SVGGraphicsElement, dx: number, dy: number): void {
-    if (dx === 0 && dy === 0) {
-        return
-    }
-
-    const existing = element.getAttribute('transform')?.trim()
-    const next = `translate(${dx}, ${dy})`
-
-    element.setAttribute('transform', existing ? `${existing} ${next}` : next)
-}
-
 function findNodeGroup(svgRoot: SVGSVGElement, uid: string): SVGGElement | null {
     return svgRoot.querySelector(`g.node[id*="flowchart-${CSS.escape(uid)}-"]`)
 }
 
-function countPathPoints(d: string): number {
-    const nums = d.match(/[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?/g)
+function parseAccumulatedTranslate(transform: string | null): { x: number; y: number } {
+    let x = 0
+    let y = 0
 
-    return nums ? nums.length / 2 : 0
+    if (!transform) {
+        return { x, y }
+    }
+
+    for (const match of transform.matchAll(/translate\(\s*([-\d.]+)(?:[,\s]+([-\d.]+))?\s*\)/g)) {
+        x += parseFloat(match[1])
+        y += parseFloat(match[2] ?? '0')
+    }
+
+    return { x, y }
 }
 
-function adjustPathCoords(d: string, from: Shift, to: Shift): string {
-    const pointCount = countPathPoints(d)
+function nodeBounds(node: SVGGElement): { x: number; y: number; width: number; height: number } {
+    const local = node.getBBox()
+    const shift = parseAccumulatedTranslate(node.getAttribute('transform'))
 
-    if (pointCount === 0) {
-        return d
+    return {
+        x: local.x + shift.x,
+        y: local.y + shift.y,
+        width: local.width,
+        height: local.height,
+    }
+}
+
+function entrySide(
+    toBox: { x: number; y: number; width: number; height: number },
+    fromBox: { x: number; y: number; width: number; height: number },
+): ExitSide {
+    const fromCx = fromBox.x + fromBox.width / 2
+    const toCx = toBox.x + toBox.width / 2
+    const dx = fromCx - toCx
+
+    if (fromBox.y + fromBox.height <= toBox.y + 8) {
+        return 'top'
     }
 
-    if (from.dx === to.dx && from.dy === to.dy) {
-        let numIdx = 0
-
-        return d.replace(/[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?/g, (match) => {
-            const val = parseFloat(match)
-            const isY = numIdx % 2 === 1
-            numIdx++
-
-            return String(val + (isY ? from.dy : from.dx))
-        })
+    if (fromBox.y >= toBox.y + toBox.height - 8) {
+        return 'bottom'
     }
 
-    let numIdx = 0
-    let pairIdx = 0
+    return dx >= 0 ? 'right' : 'left'
+}
 
-    return d.replace(/[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?/g, (match) => {
-        const val = parseFloat(match)
-        const isY = numIdx % 2 === 1
-        const t = pointCount <= 1 ? 0 : pairIdx / (pointCount - 1)
-        numIdx++
+function simpleEdgePath(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    fromBox: { x: number; y: number; width: number; height: number },
+    toBox: { x: number; y: number; width: number; height: number },
+    laneOffset = 0,
+): string {
+    const fromCy = fromBox.y + fromBox.height / 2
+    const toCy = toBox.y + toBox.height / 2
+    const dx = to.x - from.x
+    const dy = to.y - from.y
 
-        if (isY) {
-            pairIdx++
+    // Target is below — always route down (service → datastore, etc.)
+    if (toBox.y > fromBox.y + 4) {
+        const midY = (from.y + to.y) / 2
+        return `M ${from.x},${from.y} L ${from.x},${midY} L ${to.x},${midY} L ${to.x},${to.y}`
+    }
 
-            return String(val + from.dy + t * (to.dy - from.dy))
-        }
+    // Same-row horizontal flow
+    if (Math.abs(fromCy - toCy) < 24 && Math.abs(dy) < 20) {
+        return `M ${from.x},${from.y} L ${to.x},${to.y}`
+    }
 
-        return String(val + from.dx + t * (to.dx - from.dx))
-    })
+    // Cross-team at same row: route in a lane below the service/data rows
+    if (Math.abs(fromCy - toCy) < 40 && Math.abs(dx) > 48) {
+        const busY = Math.max(fromBox.y + fromBox.height, toBox.y + toBox.height) + 20 + Math.abs(laneOffset)
+        return `M ${from.x},${from.y} L ${from.x},${busY} L ${to.x},${busY} L ${to.x},${to.y}`
+    }
+
+    // Cross-team / long distance: vertical exit, horizontal travel, vertical entry
+    if (Math.abs(dx) > 48) {
+        const midY = from.y + dy * 0.45 + laneOffset
+        return `M ${from.x},${from.y} L ${from.x},${midY} L ${to.x},${midY} L ${to.x},${to.y}`
+    }
+
+    if (Math.abs(dx) < 1 || Math.abs(dy) < 1) {
+        return `M ${from.x},${from.y} L ${to.x},${to.y}`
+    }
+
+    const cx1 = from.x + dx * 0.35
+    const cy1 = from.y
+    const cx2 = to.x - dx * 0.35
+    const cy2 = to.y
+
+    return `M ${from.x},${from.y} C ${cx1},${cy1} ${cx2},${cy2} ${to.x},${to.y}`
+}
+
+function exitSide(
+    fromBox: { x: number; y: number; width: number; height: number },
+    toBox: { x: number; y: number; width: number; height: number },
+): ExitSide {
+    const fromCx = fromBox.x + fromBox.width / 2
+    const toCx = toBox.x + toBox.width / 2
+    const dx = toCx - fromCx
+
+    if (toBox.y > fromBox.y + 8) {
+        return 'bottom'
+    }
+
+    if (toBox.y + toBox.height < fromBox.y - 12) {
+        return 'top'
+    }
+
+    return dx >= 0 ? 'right' : 'left'
+}
+
+function spreadAnchor(
+    box: { x: number; y: number; width: number; height: number },
+    side: ExitSide,
+    index: number,
+    size: number,
+    inset = 0,
+): { x: number; y: number } {
+    const slot = (index + 1) / (size + 1)
+
+    switch (side) {
+        case 'bottom':
+            return { x: box.x + box.width * slot, y: box.y + box.height + inset }
+        case 'top':
+            return { x: box.x + box.width * slot, y: box.y - inset }
+        case 'right':
+            return { x: box.x + box.width + inset, y: box.y + box.height * slot }
+        case 'left':
+            return { x: box.x - inset, y: box.y + box.height * slot }
+    }
 }
 
 function pathMidpoint(d: string): { x: number; y: number } | null {
@@ -190,174 +209,259 @@ function labelHasText(label: SVGGElement): boolean {
     return (label.textContent?.replace(/\s/g, '') ?? '').length > 0
 }
 
-function snapshotEdges(svg: SVGSVGElement): Map<string, EdgeSnapshot> {
-    const snapshots = new Map<string, EdgeSnapshot>()
+export const EDGE_MARKER_ID = 'arch-edge-arrow'
+export const EDGE_MARKER_HIGHLIGHT_ID = 'arch-edge-arrow-highlight'
 
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+function installEdgeMarkers(svg: SVGSVGElement): void {
+    let defs = svg.querySelector('defs')
+
+    if (!defs) {
+        defs = document.createElementNS(SVG_NS, 'defs')
+        svg.insertBefore(defs, svg.firstChild)
+    }
+
+    if (!defs.querySelector(`#${EDGE_MARKER_ID}`)) {
+        const marker = document.createElementNS(SVG_NS, 'marker')
+        marker.setAttribute('id', EDGE_MARKER_ID)
+        marker.setAttribute('markerUnits', 'userSpaceOnUse')
+        marker.setAttribute('markerWidth', '10')
+        marker.setAttribute('markerHeight', '10')
+        marker.setAttribute('refX', '9')
+        marker.setAttribute('refY', '5')
+        marker.setAttribute('orient', 'auto')
+        marker.setAttribute('viewBox', '0 0 10 10')
+
+        const head = document.createElementNS(SVG_NS, 'path')
+        head.setAttribute('d', 'M 1.5 1.5 L 9 5 L 1.5 8.5 Z')
+        head.setAttribute('fill', '#64748b')
+        head.setAttribute('stroke', 'none')
+        marker.appendChild(head)
+        defs.appendChild(marker)
+    }
+
+    if (!defs.querySelector(`#${EDGE_MARKER_HIGHLIGHT_ID}`)) {
+        const marker = document.createElementNS(SVG_NS, 'marker')
+        marker.setAttribute('id', EDGE_MARKER_HIGHLIGHT_ID)
+        marker.setAttribute('markerUnits', 'userSpaceOnUse')
+        marker.setAttribute('markerWidth', '10')
+        marker.setAttribute('markerHeight', '10')
+        marker.setAttribute('refX', '9')
+        marker.setAttribute('refY', '5')
+        marker.setAttribute('orient', 'auto')
+        marker.setAttribute('viewBox', '0 0 10 10')
+
+        const head = document.createElementNS(SVG_NS, 'path')
+        head.setAttribute('d', 'M 1.5 1.5 L 9 5 L 1.5 8.5 Z')
+        head.setAttribute('fill', '#2563eb')
+        head.setAttribute('stroke', 'none')
+        marker.appendChild(head)
+        defs.appendChild(marker)
+    }
+}
+
+function applyEdgeMarkers(svg: SVGSVGElement): void {
     for (const path of svg.querySelectorAll<SVGPathElement>('.edgePaths path[data-edge="true"]')) {
-        const dataId = path.getAttribute('data-id') ?? ''
-
-        snapshots.set(dataId, {
-            d: path.getAttribute('d') ?? '',
-            transform: path.getAttribute('transform'),
-        })
-    }
-
-    return snapshots
-}
-
-function applyTeamShift(svg: SVGSVGElement, teamId: string, dx: number, dy: number, nodeUids: readonly string[]): void {
-    if (dx === 0 && dy === 0) {
-        return
-    }
-
-    for (const cluster of svg.querySelectorAll<SVGGElement>('g.cluster')) {
-        if (clusterBelongsToTeam(cluster.id, teamId)) {
-            appendTranslate(cluster, dx, dy)
+        if (!path.getAttribute('d')) {
+            continue
         }
-    }
 
-    for (const uid of nodeUids) {
-        const node = findNodeGroup(svg, uid)
-
-        if (node) {
-            appendTranslate(node, dx, dy)
-        }
+        path.setAttribute('marker-end', `url(#${EDGE_MARKER_ID})`)
     }
 }
 
-function addTeamShift(teamShifts: Map<string, Shift>, team: string, dx: number, dy: number): void {
-    const current = teamShifts.get(team) ?? ZERO_SHIFT
-
-    teamShifts.set(team, {
-        dx: current.dx + dx,
-        dy: current.dy + dy,
-    })
-}
-
-function shiftForTeam(teamShifts: Map<string, Shift>, team: string | undefined): Shift {
-    if (!team) {
-        return ZERO_SHIFT
-    }
-
-    return teamShifts.get(team) ?? ZERO_SHIFT
-}
-
-function restoreShiftedEdges(
-    svg: SVGSVGElement,
-    snapshots: Map<string, EdgeSnapshot>,
-    includedNodes: WebNode[],
-    includedEdges: WebEdge[],
-    teamShifts: Map<string, Shift>,
-): void {
+function rerouteEdgesAfterShift(svg: SVGSVGElement, includedNodes: WebNode[]): void {
+    installEdgeMarkers(svg)
     const knownUids = includedNodes.map((n) => n.uid)
-    const layoutEdgeMap = buildLayoutEdgeIdMap(includedEdges, { allLayoutNeutral: true })
-    const nodeTeam = new Map(includedNodes.map((n) => [n.uid, n.owner_team?.trim() ?? '']))
     const labelByDataId = new Map<string, SVGGElement>()
 
     for (const label of svg.querySelectorAll<SVGGElement>('.edgeLabels g.label[data-id]')) {
         labelByDataId.set(label.getAttribute('data-id') ?? '', label)
     }
 
+    interface EdgeWork {
+        path: SVGPathElement
+        from: string
+        to: string
+        fromNode: SVGGElement
+        toNode: SVGGElement
+        fromBox: ReturnType<typeof nodeBounds>
+        toBox: ReturnType<typeof nodeBounds>
+        fromSide: ExitSide
+        toSide: ExitSide
+    }
+
+    const edges: EdgeWork[] = []
+
     for (const path of svg.querySelectorAll<SVGPathElement>('.edgePaths path[data-edge="true"]')) {
-        const dataId = path.getAttribute('data-id') ?? ''
-        const snapshot = snapshots.get(dataId)
-
-        if (!snapshot) {
-            continue
-        }
-
-        const endpoints = parseEdgeEndpoints(path, knownUids, layoutEdgeMap)
+        const endpoints = parseEdgeEndpoints(path, knownUids, new Map())
 
         if (!endpoints) {
-            path.setAttribute('d', snapshot.d)
-            path.removeAttribute('transform')
             continue
         }
 
-        const fromShift = shiftForTeam(teamShifts, nodeTeam.get(endpoints.from))
-        const toShift = shiftForTeam(teamShifts, nodeTeam.get(endpoints.to))
-        path.setAttribute('d', adjustPathCoords(snapshot.d, fromShift, toShift))
-        path.removeAttribute('transform')
+        const fromNode = findNodeGroup(svg, endpoints.from)
+        const toNode = findNodeGroup(svg, endpoints.to)
 
-        const label = labelByDataId.get(dataId)
-
-        if (label) {
-            if (!labelHasText(label)) {
-                label.setAttribute('visibility', 'hidden')
-            } else {
-                const mid = pathMidpoint(path.getAttribute('d') ?? '')
-
-                if (mid) {
-                    label.setAttribute('transform', `translate(${mid.x}, ${mid.y})`)
-                    label.removeAttribute('visibility')
-                }
-            }
-        }
-    }
-}
-
-function reflowRowTeamsHorizontally(
-    svg: SVGSVGElement,
-    rowTeams: Map<string, WebNode[]>,
-    teamShifts: Map<string, Shift>,
-): void {
-    const entries: { team: string; teamId: string; box: DOMRect; nodeUids: string[] }[] = []
-
-    for (const [team, teamNodes] of rowTeams) {
-        const cluster = findTeamCluster(svg, teamClusterId(team))
-
-        if (!cluster) {
+        if (!fromNode || !toNode) {
             continue
         }
 
-        const rect = cluster.querySelector(':scope > rect')
+        const fromBox = nodeBounds(fromNode)
+        const toBox = nodeBounds(toNode)
 
-        if (!rect) {
-            continue
-        }
-
-        entries.push({
-            team,
-            teamId: teamClusterId(team),
-            box: rect.getBoundingClientRect(),
-            nodeUids: teamNodes.map((n) => n.uid),
+        edges.push({
+            path,
+            from: endpoints.from,
+            to: endpoints.to,
+            fromNode,
+            toNode,
+            fromBox,
+            toBox,
+            fromSide: exitSide(fromBox, toBox),
+            toSide: entrySide(toBox, fromBox),
         })
     }
 
-    if (entries.length <= 1) {
-        return
+    const fromBundles = new Map<string, EdgeWork[]>()
+    const toBundles = new Map<string, EdgeWork[]>()
+
+    for (const edge of edges) {
+        const fromKey = `${edge.from}:${edge.fromSide}`
+        const toKey = `${edge.to}:${edge.toSide}`
+        const fromList = fromBundles.get(fromKey) ?? []
+        fromList.push(edge)
+        fromBundles.set(fromKey, fromList)
+        const toList = toBundles.get(toKey) ?? []
+        toList.push(edge)
+        toBundles.set(toKey, toList)
     }
 
-    entries.sort((a, b) => a.box.left - b.box.left)
+    for (const list of fromBundles.values()) {
+        list.sort((a, b) => a.to.localeCompare(b.to))
+    }
 
-    let rightEdge = entries[0].box.right
+    for (const list of toBundles.values()) {
+        list.sort((a, b) => a.from.localeCompare(b.from))
+    }
 
-    for (let i = 1; i < entries.length; i++) {
-        const entry = entries[i]
-        const minLeft = rightEdge + MIN_TEAM_GAP
-        const dx = entry.box.left < minLeft ? minLeft - entry.box.left : 0
+    for (const edge of edges) {
+        const fromKey = `${edge.from}:${edge.fromSide}`
+        const toKey = `${edge.to}:${edge.toSide}`
+        const fromList = fromBundles.get(fromKey)!
+        const toList = toBundles.get(toKey)!
+        const fromIndex = fromList.indexOf(edge)
+        const toIndex = toList.indexOf(edge)
+        const fromLane = (fromIndex - (fromList.length - 1) / 2) * EDGE_LANE_GAP
+        const toLane = (toIndex - (toList.length - 1) / 2) * EDGE_LANE_GAP
+        const routeLane = fromLane
 
-        if (dx > 0) {
-            addTeamShift(teamShifts, entry.team, dx, 0)
-            applyTeamShift(svg, entry.teamId, dx, 0, entry.nodeUids)
-            entry.box = {
-                ...entry.box,
-                left: entry.box.left + dx,
-                right: entry.box.right + dx,
-            } as DOMRect
+        const start = spreadAnchor(edge.fromBox, edge.fromSide, fromIndex, fromList.length)
+        const end = spreadAnchor(edge.toBox, edge.toSide, toIndex, toList.length, EDGE_TARGET_GAP)
+
+        if (edge.fromSide === 'right' || edge.fromSide === 'left') {
+            start.y += fromLane
+        } else {
+            start.x += fromLane
         }
 
-        rightEdge = entry.box.right
+        if (edge.toSide === 'right' || edge.toSide === 'left') {
+            end.y += toLane
+        } else {
+            end.x += toLane
+        }
+
+        const d = simpleEdgePath(start, end, edge.fromBox, edge.toBox, routeLane)
+
+        edge.path.setAttribute('d', d)
+        edge.path.removeAttribute('transform')
+
+        const dataId = edge.path.getAttribute('data-id') ?? ''
+        const label = labelByDataId.get(dataId)
+
+        if (!label) {
+            continue
+        }
+
+        if (!labelHasText(label)) {
+            label.setAttribute('visibility', 'hidden')
+            continue
+        }
+
+        const mid = pathMidpoint(d)
+
+        if (mid) {
+            label.setAttribute('transform', `translate(${mid.x}, ${mid.y})`)
+            label.removeAttribute('visibility')
+        }
+    }
+
+    applyEdgeMarkers(svg)
+}
+
+function nodeLocalBox(node: SVGGElement): { x: number; y: number; width: number; height: number } {
+    const saved = node.getAttribute('transform')
+    node.removeAttribute('transform')
+    const box = node.getBBox()
+    if (saved) {
+        node.setAttribute('transform', saved)
+    }
+
+    return { x: box.x, y: box.y, width: box.width, height: box.height }
+}
+
+function setNodeAbsolutePosition(node: SVGGElement, targetX: number, targetY: number): void {
+    node.removeAttribute('transform')
+    const local = node.getBBox()
+    node.setAttribute('transform', `translate(${targetX - local.x}, ${targetY - local.y})`)
+}
+
+function resetTeamClusterTransforms(svg: SVGSVGElement, teamId: string): void {
+    for (const cluster of svg.querySelectorAll<SVGGElement>('g.cluster')) {
+        if (clusterBelongsToTeam(cluster.id, teamId)) {
+            cluster.removeAttribute('transform')
+        }
     }
 }
 
-function fitSvgViewBox(svg: SVGSVGElement): void {
-    const root = svg.querySelector<SVGGElement>('g.root') ?? svg
-    const layers = ['.clusters', '.nodes', '.edgePaths']
-        .map((sel) => root.querySelector<SVGGElement>(sel))
-        .filter((el): el is SVGGElement => el !== null)
+function resetMermaidRootTransforms(svg: SVGSVGElement): void {
+    for (const root of svg.querySelectorAll<SVGGElement>('g.root')) {
+        root.removeAttribute('transform')
+    }
+}
 
-    if (layers.length === 0) {
+function teamsFromNodes(nodes: WebNode[]): Map<string, WebNode[]> {
+    const byTeam = new Map<string, WebNode[]>()
+
+    for (const node of nodes) {
+        const team = node.owner_team?.trim() || 'Unowned'
+        const list = byTeam.get(team) ?? []
+        list.push(node)
+        byTeam.set(team, list)
+    }
+
+    for (const list of byTeam.values()) {
+        list.sort((a, b) => a.uid.localeCompare(b.uid))
+    }
+
+    return byTeam
+}
+
+function updateTeamClusterLabel(cluster: SVGGElement, rectX: number, rectY: number): void {
+    const label = cluster.querySelector<SVGGElement>('.cluster-label')
+
+    if (!label) {
+        return
+    }
+
+    label.setAttribute('transform', `translate(${rectX + 12}, ${rectY + 18})`)
+}
+
+function updateTeamClusterRect(svg: SVGSVGElement, cluster: SVGGElement, teamNodes: WebNode[]): void {
+    const rect = cluster.querySelector(':scope > rect')
+
+    if (!rect) {
         return
     }
 
@@ -366,13 +470,14 @@ function fitSvgViewBox(svg: SVGSVGElement): void {
     let maxX = -Infinity
     let maxY = -Infinity
 
-    for (const layer of layers) {
-        const box = layer.getBBox()
+    for (const node of teamNodes) {
+        const group = findNodeGroup(svg, node.uid)
 
-        if (box.width === 0 && box.height === 0) {
+        if (!group) {
             continue
         }
 
+        const box = nodeBounds(group)
         minX = Math.min(minX, box.x)
         minY = Math.min(minY, box.y)
         maxX = Math.max(maxX, box.x + box.width)
@@ -383,109 +488,353 @@ function fitSvgViewBox(svg: SVGSVGElement): void {
         return
     }
 
-    const pad = 20
-    const width = maxX - minX + pad * 2
-    const height = maxY - minY + pad * 2
+    const clusterShift = parseAccumulatedTranslate(cluster.getAttribute('transform'))
+    const rectX = minX - TEAM_PAD_X - clusterShift.x
+    const rectY = minY - TEAM_PAD_Y - TEAM_LABEL_HEIGHT - clusterShift.y
+    const rectW = maxX - minX + TEAM_PAD_X * 2
+    const rectH = maxY - minY + TEAM_PAD_Y * 2 + TEAM_LABEL_HEIGHT
 
-    svg.setAttribute('viewBox', `${minX - pad} ${minY - pad} ${width} ${height}`)
-    // Keep pixel size in sync with viewBox so filter changes do not shrink via stale width.
-    svg.setAttribute('width', String(width))
-    svg.removeAttribute('height')
-    svg.style.maxWidth = 'none'
+    rect.setAttribute('x', String(rectX))
+    rect.setAttribute('y', String(rectY))
+    rect.setAttribute('width', String(rectW))
+    rect.setAttribute('height', String(rectH))
+    updateTeamClusterLabel(cluster, rectX, rectY)
 }
 
-/**
- * Mermaid 11 renders nodes outside cluster groups, so dagre staggers team boxes vertically.
- * After render, align main-row teams and shift original Mermaid edge paths with them.
- */
-export function alignTeamRowLayout(svgRoot: Element, includedNodes: WebNode[], includedEdges: WebEdge[]): void {
+interface TeamLayerLayout {
+    kind: Kind
+    nodes: WebNode[]
+    rowWidth: number
+    rowHeight: number
+}
+
+interface TeamLayoutPlan {
+    width: number
+    height: number
+    layers: TeamLayerLayout[]
+}
+
+function planTeamLayout(svg: SVGSVGElement, teamNodes: WebNode[]): TeamLayoutPlan {
+    const byKind = new Map<Kind, WebNode[]>()
+
+    for (const node of teamNodes) {
+        const list = byKind.get(node.kind) ?? []
+        list.push(node)
+        byKind.set(node.kind, list)
+    }
+
+    for (const list of byKind.values()) {
+        list.sort((a, b) => a.uid.localeCompare(b.uid))
+    }
+
+    const presentLayers = KIND_LAYERS.filter((kind) => (byKind.get(kind)?.length ?? 0) > 0)
+    const layers: TeamLayerLayout[] = []
+    let width = TEAM_PAD_X * 2
+    let height = TEAM_PAD_Y * 2 + TEAM_LABEL_HEIGHT
+
+    for (const kind of presentLayers) {
+        const nodes = byKind.get(kind)!
+        let rowWidth = 0
+        let rowHeight = 0
+
+        for (const node of nodes) {
+            const group = findNodeGroup(svg, node.uid)
+
+            if (!group) {
+                continue
+            }
+
+            const size = nodeLocalBox(group)
+            rowWidth += size.width + NODE_H_GAP
+            rowHeight = Math.max(rowHeight, size.height)
+        }
+
+        rowWidth = Math.max(0, rowWidth - NODE_H_GAP)
+        width = Math.max(width, rowWidth + TEAM_PAD_X * 2)
+        layers.push({ kind, nodes, rowWidth, rowHeight })
+        height += rowHeight + (layers.length > 1 ? KIND_LAYER_GAP : 0)
+    }
+
+    return { width, height, layers }
+}
+
+function placeTeam(
+    svg: SVGSVGElement,
+    team: string,
+    teamNodes: WebNode[],
+    originX: number,
+    originY: number,
+    plan: TeamLayoutPlan,
+): void {
+    resetTeamClusterTransforms(svg, teamClusterId(team))
+
+    let rowY = originY + TEAM_PAD_Y + TEAM_LABEL_HEIGHT
+    let serviceRowWidth = 0
+
+    for (const layer of plan.layers) {
+        let rowX = originX + TEAM_PAD_X
+
+        if (layer.kind === 'datastore' && plan.layers.some((entry) => entry.kind === 'system')) {
+            rowX = originX + TEAM_PAD_X + Math.max(0, (serviceRowWidth - layer.rowWidth) / 2)
+        }
+
+        if (layer.kind === 'system') {
+            serviceRowWidth = layer.rowWidth
+        }
+
+        for (const node of layer.nodes) {
+            const group = findNodeGroup(svg, node.uid)
+
+            if (!group) {
+                continue
+            }
+
+            setNodeAbsolutePosition(group, rowX, rowY)
+            rowX += nodeLocalBox(group).width + NODE_H_GAP
+        }
+
+        rowY += layer.rowHeight + KIND_LAYER_GAP
+    }
+
+    const cluster = findTeamCluster(svg, teamClusterId(team))
+
+    if (cluster) {
+        updateTeamClusterRect(svg, cluster, teamNodes)
+    }
+}
+
+function teamRenderOrder(svg: SVGSVGElement, includedNodes: WebNode[]): string[] {
+    const teams = [...teamsFromNodes(includedNodes).keys()]
+
+    return teams.sort((a, b) => {
+        const clusterA = findTeamCluster(svg, teamClusterId(a))
+        const clusterB = findTeamCluster(svg, teamClusterId(b))
+        const rectA = clusterA?.querySelector(':scope > rect')
+        const rectB = clusterB?.querySelector(':scope > rect')
+        const shiftA = parseAccumulatedTranslate(clusterA?.getAttribute('transform') ?? null)
+        const shiftB = parseAccumulatedTranslate(clusterB?.getAttribute('transform') ?? null)
+        const xA = parseFloat(rectA?.getAttribute('x') ?? '0') + shiftA.x
+        const xB = parseFloat(rectB?.getAttribute('x') ?? '0') + shiftB.x
+
+        if (xA !== xB) {
+            return xA - xB
+        }
+
+        return a.localeCompare(b)
+    })
+}
+
+function dependencyTeamOrder(baseOrder: string[], includedNodes: WebNode[], includedEdges: WebEdge[]): string[] {
+    const teamByUid = new Map(includedNodes.map((node) => [node.uid, node.owner_team?.trim() || 'Unowned']))
+    const baseIndex = new Map(baseOrder.map((team, index) => [team, index]))
+    const edgeCounts = new Map<string, number>()
+
+    for (const edge of includedEdges) {
+        const fromTeam = teamByUid.get(edge.from)
+        const toTeam = teamByUid.get(edge.to)
+
+        if (!fromTeam || !toTeam || fromTeam === toTeam || !baseIndex.has(fromTeam) || !baseIndex.has(toTeam)) {
+            continue
+        }
+
+        const key = `${fromTeam}→${toTeam}`
+        edgeCounts.set(key, (edgeCounts.get(key) ?? 0) + 1)
+    }
+
+    return [...baseOrder].sort((a, b) => {
+        const aToB = edgeCounts.get(`${a}→${b}`) ?? 0
+        const bToA = edgeCounts.get(`${b}→${a}`) ?? 0
+
+        if (aToB !== bToA) {
+            return bToA - aToB
+        }
+
+        return (baseIndex.get(a) ?? 0) - (baseIndex.get(b) ?? 0)
+    })
+}
+
+function placeTeamRows(svg: SVGSVGElement, teams: [string, WebNode[]][], startY: number): number {
+    let x = DIAGRAM_ORIGIN_X
+    let rowY = startY
+    let rowHeight = 0
+    let bottom = startY
+
+    for (const [team, teamNodes] of teams) {
+        const plan = planTeamLayout(svg, teamNodes)
+
+        if (x > DIAGRAM_ORIGIN_X && x + plan.width > DIAGRAM_ORIGIN_X + MAX_TEAM_ROW_WIDTH) {
+            x = DIAGRAM_ORIGIN_X
+            rowY += rowHeight + TEAM_ROW_GAP
+            rowHeight = 0
+        }
+
+        placeTeam(svg, team, teamNodes, x, rowY, plan)
+        x += plan.width + MIN_TEAM_GAP
+        rowHeight = Math.max(rowHeight, plan.height)
+        bottom = Math.max(bottom, rowY + plan.height)
+    }
+
+    return bottom
+}
+
+function layoutTeamsFromScratch(svg: SVGSVGElement, includedNodes: WebNode[], includedEdges: WebEdge[]): void {
+    const byTeam = teamsFromNodes(includedNodes)
+    const order = dependencyTeamOrder(teamRenderOrder(svg, includedNodes), includedNodes, includedEdges)
+    const topTeams: [string, WebNode[]][] = []
+    const rowTeams: [string, WebNode[]][] = []
+
+    for (const team of order) {
+        const teamNodes = byTeam.get(team)
+
+        if (!teamNodes) {
+            continue
+        }
+
+        if (isTopRowTeam(teamNodes)) {
+            topTeams.push([team, teamNodes])
+        } else {
+            rowTeams.push([team, teamNodes])
+        }
+    }
+
+    let mainRowY = DIAGRAM_ORIGIN_Y
+    let topRowBottom = DIAGRAM_ORIGIN_Y
+
+    if (topTeams.length > 0) {
+        topRowBottom = placeTeamRows(svg, topTeams, DIAGRAM_ORIGIN_Y)
+        mainRowY = topRowBottom + ROW_GAP_BELOW_TOP
+    }
+
+    placeTeamRows(svg, rowTeams, mainRowY)
+}
+
+function outerTeamClusterRect(cluster: SVGGElement): { x: number; y: number; width: number; height: number } | null {
+    const suffix = cluster.id.includes('-') ? cluster.id.slice(cluster.id.lastIndexOf('-') + 1) : cluster.id
+
+    if (
+        suffix.endsWith('_system') ||
+        suffix.endsWith('_library') ||
+        suffix.endsWith('_tool') ||
+        suffix.endsWith('_datastore') ||
+        suffix === 'teams_row'
+    ) {
+        return null
+    }
+
+    if (!/^team_[a-z0-9_]+$/i.test(suffix)) {
+        return null
+    }
+
+    const rect = cluster.querySelector(':scope > rect')
+
+    if (!rect) {
+        return null
+    }
+
+    const shift = parseAccumulatedTranslate(cluster.getAttribute('transform'))
+    const x = parseFloat(rect.getAttribute('x') ?? '0') + shift.x
+    const y = parseFloat(rect.getAttribute('y') ?? '0') + shift.y
+    const width = parseFloat(rect.getAttribute('width') ?? '0')
+    const height = parseFloat(rect.getAttribute('height') ?? '0')
+
+    if (width <= 0 || height <= 0) {
+        return null
+    }
+
+    return { x, y, width, height }
+}
+
+function growBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+    box: { x: number; y: number; width: number; height: number },
+): [number, number, number, number] {
+    return [
+        Math.min(minX, box.x),
+        Math.min(minY, box.y),
+        Math.max(maxX, box.x + box.width),
+        Math.max(maxY, box.y + box.height),
+    ]
+}
+
+export function fitDiagramViewBox(svgRoot: Element): void {
     if (!(svgRoot instanceof SVGSVGElement)) {
         return
     }
 
-    const rowTeams = rowTeamsFromNodes(includedNodes)
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
 
-    if (rowTeams.size <= 1) {
+    for (const node of svgRoot.querySelectorAll<SVGGElement>('g.node')) {
+        const box = nodeBounds(node)
+
+        if (box.width === 0 && box.height === 0) {
+            continue
+        }
+
+        ;[minX, minY, maxX, maxY] = growBounds(minX, minY, maxX, maxY, box)
+    }
+
+    for (const cluster of svgRoot.querySelectorAll<SVGGElement>('g.cluster')) {
+        const box = outerTeamClusterRect(cluster)
+
+        if (!box) {
+            continue
+        }
+
+        ;[minX, minY, maxX, maxY] = growBounds(minX, minY, maxX, maxY, box)
+    }
+
+    for (const path of svgRoot.querySelectorAll<SVGPathElement>('.edgePaths path[data-edge="true"]')) {
+        const d = path.getAttribute('d')
+
+        if (!d) {
+            continue
+        }
+
+        const box = path.getBBox()
+
+        if (box.width === 0 && box.height === 0) {
+            continue
+        }
+
+        ;[minX, minY, maxX, maxY] = growBounds(minX, minY, maxX, maxY, box)
+    }
+
+    if (!Number.isFinite(minX)) {
         return
     }
 
-    const edgeSnapshots = snapshotEdges(svgRoot)
-    const teamShifts = new Map<string, Shift>()
-    const topClusters: SVGGElement[] = []
-    const rowClusters: { team: string; top: number }[] = []
+    const pad = 4
+    const width = maxX - minX + pad * 2
+    const height = maxY - minY + pad * 2
+    const originX = minX - pad
+    const originY = minY - pad
 
-    for (const [team] of rowTeams) {
-        const cluster = findTeamCluster(svgRoot, teamClusterId(team))
+    svgRoot.setAttribute('viewBox', `${originX} ${originY} ${width} ${height}`)
+    svgRoot.setAttribute('width', String(width))
+    svgRoot.setAttribute('height', String(height))
+    svgRoot.removeAttribute('preserveAspectRatio')
+    svgRoot.style.width = ''
+    svgRoot.style.height = ''
+    svgRoot.style.maxWidth = 'none'
+    svgRoot.style.display = 'block'
+}
 
-        if (!cluster) {
-            continue
-        }
-
-        const top = clusterTopY(cluster)
-
-        if (top === null) {
-            continue
-        }
-
-        rowClusters.push({ team, top })
-    }
-
-    for (const node of includedNodes) {
-        const team = node.owner_team?.trim()
-
-        if (!team || rowTeams.has(team)) {
-            continue
-        }
-
-        const teamNodes = includedNodes.filter((n) => n.owner_team?.trim() === team)
-
-        if (!isTopRowTeam(teamNodes)) {
-            continue
-        }
-
-        const cluster = findTeamCluster(svgRoot, teamClusterId(team))
-
-        if (cluster && !topClusters.includes(cluster)) {
-            topClusters.push(cluster)
-        }
-    }
-
-    if (rowClusters.length <= 1) {
+/**
+ * Mermaid 11 ignores swimlane structure — lay out teams and kind layers from scratch.
+ */
+export function alignTeamRowLayout(svgRoot: Element, includedNodes: WebNode[], _includedEdges: WebEdge[]): void {
+    if (!(svgRoot instanceof SVGSVGElement)) {
         return
     }
 
-    let targetTop = Math.min(...rowClusters.map((entry) => entry.top))
-
-    if (topClusters.length > 0) {
-        const topBottom = Math.max(
-            ...topClusters.map((cluster) => clusterBottomY(cluster)).filter((y): y is number => y !== null),
-        )
-        targetTop = Math.max(targetTop, topBottom + ROW_GAP_BELOW_TOP)
-    }
-
-    let adjusted = false
-
-    for (const { team, top } of rowClusters) {
-        const dy = targetTop - top
-
-        if (dy !== 0) {
-            adjusted = true
-            addTeamShift(teamShifts, team, 0, dy)
-            applyTeamShift(
-                svgRoot,
-                teamClusterId(team),
-                0,
-                dy,
-                rowTeams.get(team)!.map((n) => n.uid),
-            )
-        }
-    }
-
-    reflowRowTeamsHorizontally(svgRoot, rowTeams, teamShifts)
-
-    if (adjusted || teamShifts.size > 0) {
-        restoreShiftedEdges(svgRoot, edgeSnapshots, includedNodes, includedEdges, teamShifts)
-    }
-
-    fitSvgViewBox(svgRoot)
+    resetMermaidRootTransforms(svgRoot)
+    layoutTeamsFromScratch(svgRoot, includedNodes, _includedEdges)
+    rerouteEdgesAfterShift(svgRoot, includedNodes)
+    fitDiagramViewBox(svgRoot)
 }
