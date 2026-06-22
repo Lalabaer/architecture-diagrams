@@ -106,6 +106,7 @@ function renderChips(selected: string[]) {
 }
 
 const LAYOUT_STORAGE_KEY = 'architecture-diagrams.diagramLayout'
+const STRUCTURE_STORAGE_KEY = 'architecture-diagrams.diagramStructure'
 
 function kindFilterStorageKey(view: View): string {
     return `architecture-diagrams.kindFilter.${view}`
@@ -211,6 +212,11 @@ function currentLayout(): DiagramLayout {
     return select.value === 'lr' ? 'lr' : 'tb'
 }
 
+function currentStructureLayered(): boolean {
+    const select = qs<HTMLSelectElement>('#structureSelect')
+    return select.value === 'layered'
+}
+
 function restoreLayoutFromStorage() {
     const select = qs<HTMLSelectElement>('#layoutSelect')
     try {
@@ -223,9 +229,29 @@ function restoreLayoutFromStorage() {
     }
 }
 
+function restoreStructureFromStorage() {
+    const select = qs<HTMLSelectElement>('#structureSelect')
+    try {
+        const raw = localStorage.getItem(STRUCTURE_STORAGE_KEY)
+        if (raw === 'classic' || raw === 'layered') {
+            select.value = raw
+        }
+    } catch {
+        /* ignore */
+    }
+}
+
 function persistLayout() {
     try {
         localStorage.setItem(LAYOUT_STORAGE_KEY, currentLayout())
+    } catch {
+        /* ignore */
+    }
+}
+
+function persistStructure() {
+    try {
+        localStorage.setItem(STRUCTURE_STORAGE_KEY, currentStructureLayered() ? 'layered' : 'classic')
     } catch {
         /* ignore */
     }
@@ -280,12 +306,14 @@ async function render() {
     const view = currentView()
     const selectedTeams = getSelectedTeams()
     const diagramLayout = currentLayout()
+    const layered = currentStructureLayered()
 
     const visibleKinds = getVisibleKinds(view)
     const { mermaid, isEmpty, includedNodes, includedEdges } = buildMermaid(graph, {
         view,
         selectedTeams,
         diagramLayout,
+        layered,
         visibleKinds,
     })
 
@@ -328,7 +356,7 @@ async function render() {
         container.innerHTML = svg
         bindFunctions?.(container)
 
-        if (diagramLayout === 'tb') {
+        if (diagramLayout === 'tb' && !layered) {
             alignTeamRowLayout(container.querySelector('svg') ?? container, includedNodes, includedEdges)
         }
 
@@ -396,6 +424,7 @@ export function boot() {
     renderTeamControls(teams)
     renderKindFilters(currentView())
     restoreLayoutFromStorage()
+    restoreStructureFromStorage()
     attachSearch()
     attachDiagramZoom()
 
@@ -409,7 +438,13 @@ export function boot() {
     const layoutSel = qs<HTMLSelectElement>('#layoutSelect')
     layoutSel.addEventListener('change', () => {
         persistLayout()
-        render()
+        void render()
+    })
+
+    const structureSel = qs<HTMLSelectElement>('#structureSelect')
+    structureSel.addEventListener('change', () => {
+        persistStructure()
+        void render()
     })
 
     // checkbox changes

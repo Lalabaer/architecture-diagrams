@@ -60,6 +60,18 @@
                             horizontal row below.
                         </div>
                     </div>
+
+                    <div class="panelSection">
+                        <div class="meta" style="margin-bottom: 6px">Structure</div>
+                        <select id="structureSelect" aria-label="Diagram structure">
+                            <option value="classic" selected>Classic — services and data per team</option>
+                            <option value="layered">Layered — services separate from data</option>
+                        </select>
+                        <div class="meta" style="margin-top: 6px; font-size: 12px">
+                            Layered puts all services in one band and all datastores in another, so data arrows mostly
+                            flow downward instead of crossing service rows.
+                        </div>
+                    </div>
                 </div>
             </div>
 

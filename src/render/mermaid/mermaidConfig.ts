@@ -24,6 +24,6 @@ export const MERMAID_CONFIG = {
     },
     flowchart: {
         htmlLabels: false,
-        curve: 'basis' as const,
+        curve: 'linear' as const,
     },
 }
