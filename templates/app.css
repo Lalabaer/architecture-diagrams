@@ -155,20 +155,125 @@ input[type='text'] {
 }
 
 .diagramWrap {
-    overflow: auto;
+    position: relative;
+    display: flex;
+    flex-direction: column;
     height: calc(100vh - 88px);
     min-height: 480px;
     width: 100%;
     min-width: 0; /* grid child: allow this column to shrink so overflow scroll works */
+    border: 1px solid #eee;
+    border-radius: 10px;
+    background: #fafafa;
+}
+
+.diagramScroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 12px;
+}
+
+.diagramSizer {
+    position: relative;
+}
+
+.diagramStage {
+    transform-origin: 0 0;
 }
 
 #diagram {
-    min-height: 100%;
+    min-height: 0;
 }
 
 /* Mermaid often sets a max-width on the SVG; allow wide layouts to use horizontal space + scroll. */
 .diagramWrap svg {
     max-width: none !important;
+    display: block;
+}
+
+/* Kind layers inside a team use nested subgraphs for LR layout; hide their boxes in the UI. */
+.diagramWrap svg g.cluster[id$='_system'] > rect,
+.diagramWrap svg g.cluster[id$='_library'] > rect,
+.diagramWrap svg g.cluster[id$='_tool'] > rect,
+.diagramWrap svg g.cluster[id$='_datastore'] > rect,
+.diagramWrap svg g.cluster[id$='teams_row'] > rect {
+    fill: transparent !important;
+    stroke: transparent !important;
+}
+
+.diagramWrap svg g.cluster[id$='_system'] .cluster-label,
+.diagramWrap svg g.cluster[id$='_library'] .cluster-label,
+.diagramWrap svg g.cluster[id$='_tool'] .cluster-label,
+.diagramWrap svg g.cluster[id$='_datastore'] .cluster-label,
+.diagramWrap svg g.cluster[id$='teams_row'] .cluster-label {
+    display: none;
+}
+
+.diagramWrap svg g.cluster.cluster--teamFilterable {
+    cursor: pointer;
+}
+
+.diagramWrap svg g.cluster.cluster--teamFilterable .cluster-label text {
+    cursor: pointer;
+}
+
+.diagramWrap svg g.cluster.cluster--teamSelected > rect {
+    fill: #eff6ff !important;
+    stroke: #2563eb !important;
+    stroke-width: 2px !important;
+}
+
+.zoomControls {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+}
+
+.zoomBtn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    border-bottom: 1px solid #e5e7eb;
+    background: #fff;
+    color: #1f2937;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.zoomBtn:last-child {
+    border-bottom: none;
+}
+
+.zoomBtn:hover:not(:disabled) {
+    background: #f3f4f6;
+}
+
+.zoomBtn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.zoomLevel {
+    display: block;
+    padding: 4px 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+    text-align: center;
+    border-bottom: 1px solid #e5e7eb;
+    user-select: none;
 }
 
 .emptyHint {
@@ -224,4 +329,82 @@ input[type='text'] {
 
 .diagramWrap .node--hasTooltip {
     cursor: help;
+}
+
+.diagramWrap .node--focusable {
+    cursor: pointer;
+}
+
+.diagramWrap .diagram--focusActive .node--focusable {
+    cursor: pointer;
+}
+
+.focusHint {
+    color: #64748b;
+    font-size: 13px;
+    padding: 12px 12px 0 12px;
+    line-height: 1.4;
+    flex-shrink: 0;
+}
+
+.focusHint--active {
+    color: #1e40af;
+}
+
+/* Dependency focus mode — dim unrelated parts, highlight 1-hop neighbors */
+.diagram--focusActive g.node.diagram__node--dimmed {
+    opacity: 0.14;
+}
+
+.diagram--focusActive g.node.diagram__node--related {
+    opacity: 1;
+}
+
+.diagram--focusActive g.node.diagram__node--selected {
+    opacity: 1;
+}
+
+.diagram--focusActive g.node.diagram__node--selected rect,
+.diagram--focusActive g.node.diagram__node--selected polygon,
+.diagram--focusActive g.node.diagram__node--selected path {
+    stroke: #2563eb !important;
+    stroke-width: 2.5px !important;
+    fill: #eff6ff !important;
+}
+
+.diagram--focusActive g.node.diagram__node--related rect,
+.diagram--focusActive g.node.diagram__node--related polygon,
+.diagram--focusActive g.node.diagram__node--related path {
+    stroke: #64748b !important;
+    stroke-width: 2px !important;
+}
+
+.diagram--focusActive .edgePaths > path.diagram__edge--dimmed {
+    opacity: 0.1;
+}
+
+.diagram--focusActive .edgePaths > path.diagram__edge--highlight {
+    opacity: 1;
+    stroke: #2563eb !important;
+    stroke-width: 3px !important;
+}
+
+.diagram--focusActive g.edgeLabel.diagram__edge--dimmed {
+    opacity: 0.1;
+}
+
+.diagram--focusActive g.edgeLabel.diagram__edge--highlight {
+    opacity: 1;
+}
+
+.diagram--focusActive g.cluster.diagram__cluster--dimmed {
+    opacity: 0.18;
+}
+
+.diagram--focusActive
+    g.cluster:not(.diagram__cluster--dimmed):not([id$='_system']):not([id$='_library']):not([id$='_tool']):not(
+        [id$='_datastore']
+    )
+    rect {
+    stroke: #93c5fd;
 }

@@ -9,8 +9,7 @@ function nodeTitle(n: WebNode): string {
 }
 
 function findNodeGroup(svgRoot: HTMLElement, uid: string): SVGGElement | null {
-    const prefix = `flowchart-${uid}-`
-    return svgRoot.querySelector(`g.node[id^="${CSS.escape(prefix)}"]`)
+    return svgRoot.querySelector(`g.node[id*="flowchart-${CSS.escape(uid)}-"]`)
 }
 
 function ensureTooltipElement(): HTMLDivElement {
@@ -28,11 +27,7 @@ function ensureTooltipElement(): HTMLDivElement {
     return el
 }
 
-function appendMetaLine(
-    tooltip: HTMLDivElement,
-    text: string,
-    tone?: 'critical' | 'warning' | 'muted',
-): void {
+function appendMetaLine(tooltip: HTMLDivElement, text: string, tone?: 'critical' | 'warning' | 'muted'): void {
     const line = document.createElement('div')
     line.className = 'nodeTooltip__meta'
 
