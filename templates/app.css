@@ -379,18 +379,26 @@ input[type='text'] {
     stroke-width: 2px !important;
 }
 
-.diagram--focusActive .edgePaths > path.diagram__edge--dimmed {
-    opacity: 0.1;
+.diagramWrap svg .edgePaths path[data-edge='true'] {
+    stroke: #94a3b8;
+    stroke-width: 1.5px;
+    fill: none;
 }
 
-.diagram--focusActive .edgePaths > path.diagram__edge--highlight {
+.diagram--focusActive .edgePaths path.diagram__edge--dimmed {
+    visibility: hidden;
+    opacity: 0;
+}
+
+.diagram--focusActive .edgePaths path.diagram__edge--highlight {
     opacity: 1;
     stroke: #2563eb !important;
-    stroke-width: 3px !important;
+    stroke-width: 2px !important;
 }
 
 .diagram--focusActive g.edgeLabel.diagram__edge--dimmed {
-    opacity: 0.1;
+    visibility: hidden;
+    opacity: 0;
 }
 
 .diagram--focusActive g.edgeLabel.diagram__edge--highlight {

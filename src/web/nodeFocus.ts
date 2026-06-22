@@ -1,7 +1,24 @@
-import type { DiagramLayout } from '../shared/buildMermaid.js'
 import { teamClusterId } from '../shared/buildMermaid.js'
 import type { WebEdge, WebNode } from '../shared/graph.js'
 import { buildLayoutEdgeIdMap, parseEdgeEndpoints } from '../shared/mermaidEdges.js'
+
+import { EDGE_MARKER_HIGHLIGHT_ID, EDGE_MARKER_ID } from './alignTeamRowLayout.js'
+
+function edgePathElements(svgRoot: Element): SVGPathElement[] {
+    return [...svgRoot.querySelectorAll<SVGPathElement>('.edgePaths path[data-edge="true"]')].filter(
+        (path) => (path.getAttribute('d') ?? '').length > 0,
+    )
+}
+
+function edgeLabelLayer(svgRoot: Element): Element | null {
+    for (const layer of svgRoot.querySelectorAll('.edgeLabels')) {
+        if (layer.querySelector('g.edgeLabel, g.label')) {
+            return layer
+        }
+    }
+
+    return svgRoot.querySelector('.edgeLabels')
+}
 
 const FOCUS_ACTIVE_CLASS = 'diagram--focusActive'
 const NODE_DIMMED_CLASS = 'diagram__node--dimmed'
@@ -112,29 +129,23 @@ function clearFocusClasses(svgRoot: Element): void {
         el.classList.remove(EDGE_DIMMED_CLASS, EDGE_HIGHLIGHT_CLASS)
     }
 
+    for (const path of svgRoot.querySelectorAll<SVGPathElement>('.edgePaths path[data-edge="true"]')) {
+        path.setAttribute('marker-end', `url(#${EDGE_MARKER_ID})`)
+    }
+
     for (const el of svgRoot.querySelectorAll(`.${CLUSTER_DIMMED_CLASS}`)) {
         el.classList.remove(CLUSTER_DIMMED_CLASS)
     }
 }
 
-function applyFocus(
-    svgRoot: Element,
-    state: FocusState,
-    edges: WebEdge[],
-    nodes: WebNode[],
-    diagramLayout: DiagramLayout,
-): void {
+function applyFocus(svgRoot: Element, state: FocusState, edges: WebEdge[], nodes: WebNode[]): void {
     clearFocusClasses(svgRoot)
     svgRoot.classList.add(FOCUS_ACTIVE_CLASS)
 
     const related = relatedUids(state)
     const highlightEdgeKeys = new Set<string>()
     const knownUids = nodes.map((n) => n.uid)
-    const nodeTeam = new Map(nodes.map((n) => [n.uid, n.owner_team?.trim() || 'Unowned']))
-    const layoutEdgeMap = buildLayoutEdgeIdMap(edges, {
-        allLayoutNeutral: diagramLayout === 'tb',
-        nodeTeam,
-    })
+    const layoutEdgeMap = buildLayoutEdgeIdMap(edges)
     const teams = [...new Set(nodes.map((n) => n.owner_team?.trim()).filter(Boolean))] as string[]
 
     for (const to of state.downstream) {
@@ -161,56 +172,54 @@ function applyFocus(
         }
     }
 
-    const edgePaths = svgRoot.querySelector('.edgePaths')
-    const edgeLabels = svgRoot.querySelector('.edgeLabels')
+    const paths = edgePathElements(svgRoot)
+    const edgeLabels = edgeLabelLayer(svgRoot)
 
-    if (edgePaths) {
-        const paths = [...edgePaths.querySelectorAll<SVGPathElement>('path[data-edge="true"]')]
+    for (const path of paths) {
+        const endpoints = parseEdgeEndpoints(path, knownUids, layoutEdgeMap)
+
+        if (!endpoints) {
+            path.classList.add(EDGE_DIMMED_CLASS)
+            continue
+        }
+
+        const key = `${endpoints.from}→${endpoints.to}`
+
+        if (highlightEdgeKeys.has(key)) {
+            path.classList.add(EDGE_HIGHLIGHT_CLASS)
+            path.setAttribute('marker-end', `url(#${EDGE_MARKER_HIGHLIGHT_ID})`)
+            path.parentElement?.appendChild(path)
+        } else {
+            path.classList.add(EDGE_DIMMED_CLASS)
+        }
+    }
+
+    if (edgeLabels) {
+        for (const label of edgeLabels.querySelectorAll<SVGGElement>('g.edgeLabel')) {
+            label.classList.add(EDGE_DIMMED_CLASS)
+        }
 
         for (const path of paths) {
             const endpoints = parseEdgeEndpoints(path, knownUids, layoutEdgeMap)
 
             if (!endpoints) {
-                path.classList.add(EDGE_DIMMED_CLASS)
                 continue
             }
 
             const key = `${endpoints.from}→${endpoints.to}`
 
-            if (highlightEdgeKeys.has(key)) {
-                path.classList.add(EDGE_HIGHLIGHT_CLASS)
-            } else {
-                path.classList.add(EDGE_DIMMED_CLASS)
-            }
-        }
-
-        if (edgeLabels) {
-            for (const label of edgeLabels.querySelectorAll<SVGGElement>('g.edgeLabel')) {
-                label.classList.add(EDGE_DIMMED_CLASS)
+            if (!highlightEdgeKeys.has(key)) {
+                continue
             }
 
-            for (const path of paths) {
-                const endpoints = parseEdgeEndpoints(path, knownUids, layoutEdgeMap)
+            const dataId = path.getAttribute('data-id')
+            const label = dataId
+                ? edgeLabels.querySelector<SVGGElement>(`g.label[data-id="${CSS.escape(dataId)}"]`)
+                : null
 
-                if (!endpoints) {
-                    continue
-                }
-
-                const key = `${endpoints.from}→${endpoints.to}`
-
-                if (!highlightEdgeKeys.has(key)) {
-                    continue
-                }
-
-                const dataId = path.getAttribute('data-id')
-                const label = dataId
-                    ? edgeLabels.querySelector<SVGGElement>(`g.label[data-id="${CSS.escape(dataId)}"]`)
-                    : null
-
-                if (label) {
-                    label.classList.remove(EDGE_DIMMED_CLASS)
-                    label.classList.add(EDGE_HIGHLIGHT_CLASS)
-                }
+            if (label) {
+                label.classList.remove(EDGE_DIMMED_CLASS)
+                label.classList.add(EDGE_HIGHLIGHT_CLASS)
             }
         }
     }
@@ -252,7 +261,10 @@ function updateFocusHint(state: FocusState | null, nodesByUid: Map<string, WebNo
     const title = selected?.name?.trim() || selected?.id || state.selectedUid
 
     hint.classList.add('focusHint--active')
-    hint.textContent = `${title}: ${state.downstream.size} outgoing, ${state.upstream.size} incoming. Click empty space or press Esc to reset.`
+    hint.textContent = [
+        `${title}: ${state.downstream.size} outgoing, ${state.upstream.size} incoming.`,
+        'Click empty space or press Esc to reset.',
+    ].join(' ')
 }
 
 export function attachNodeFocus(
@@ -260,7 +272,6 @@ export function attachNodeFocus(
     svgRoot: Element,
     nodes: WebNode[],
     edges: WebEdge[],
-    diagramLayout: DiagramLayout,
 ): () => void {
     const nodesByUid = new Map(nodes.map((n) => [n.uid, n]))
     let currentFocus: FocusState | null = null
@@ -278,7 +289,7 @@ export function attachNodeFocus(
         }
 
         currentFocus = computeFocusState(uid, edges)
-        applyFocus(svgRoot, currentFocus, edges, nodes, diagramLayout)
+        applyFocus(svgRoot, currentFocus, edges, nodes)
         updateFocusHint(currentFocus, nodesByUid)
     }
 
