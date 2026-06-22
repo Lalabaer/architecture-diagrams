@@ -7,6 +7,8 @@ const TEAM_ROW_GAP = 44
 const MAX_TEAM_ROW_WIDTH = 2400
 const MIN_TEAM_GAP = 28
 const KIND_LAYER_GAP = 36
+const SERVICE_DATASTORE_GAP = 32
+const MIN_SYSTEM_NODE_HEIGHT = 60
 const NODE_H_GAP = 24
 const TEAM_PAD_X = 12
 const TEAM_PAD_Y = 16
@@ -657,10 +659,11 @@ function planTeamLayout(svg: SVGSVGElement, teamNodes: WebNode[], includedEdges:
 
     for (const system of systemNodes) {
         const systemSize = nodeSize(svg, system)
+        const systemHeight = Math.max(systemSize.height, MIN_SYSTEM_NODE_HEIGHT)
         const datastores = datastoresByService.get(system.uid) ?? []
         const datastoreMetrics = rowMetrics(svg, datastores)
         const hasDatastores = datastores.length > 0
-        const height = systemSize.height + (hasDatastores ? KIND_LAYER_GAP + datastoreMetrics.rowHeight : 0)
+        const height = systemHeight + (hasDatastores ? SERVICE_DATASTORE_GAP + datastoreMetrics.rowHeight : 0)
         const width = Math.max(systemSize.width, datastoreMetrics.rowWidth)
 
         columns.push({
@@ -668,7 +671,7 @@ function planTeamLayout(svg: SVGSVGElement, teamNodes: WebNode[], includedEdges:
             datastores,
             width,
             height,
-            systemHeight: systemSize.height,
+            systemHeight,
             datastoreRowWidth: datastoreMetrics.rowWidth,
             datastoreRowHeight: datastoreMetrics.rowHeight,
         })
@@ -709,6 +712,10 @@ function planTeamLayout(svg: SVGSVGElement, teamNodes: WebNode[], includedEdges:
         height += columnRowHeight
     }
 
+    if (columns.length > 0 && layers.length > 0) {
+        height += KIND_LAYER_GAP
+    }
+
     if (sharedDatastoreLayer) {
         width = Math.max(width, sharedDatastoreLayer.rowWidth + TEAM_PAD_X * 2)
         height += (columns.length > 0 || layers.length > 0 ? KIND_LAYER_GAP : 0) + sharedDatastoreLayer.rowHeight
@@ -734,10 +741,12 @@ function placeTeam(
 
         for (const column of plan.columns) {
             const systemGroup = findNodeGroup(svg, column.system.uid)
+            let datastoreY = rowY + column.systemHeight + SERVICE_DATASTORE_GAP
 
             if (systemGroup) {
                 const systemSize = nodeLocalBox(systemGroup)
                 setNodeAbsolutePosition(systemGroup, columnX + (column.width - systemSize.width) / 2, rowY)
+                datastoreY = nodeBounds(systemGroup).y + systemSize.height + SERVICE_DATASTORE_GAP
             }
 
             let datastoreX = columnX + Math.max(0, (column.width - column.datastoreRowWidth) / 2)
@@ -749,7 +758,7 @@ function placeTeam(
                     continue
                 }
 
-                setNodeAbsolutePosition(datastoreGroup, datastoreX, rowY + column.systemHeight + KIND_LAYER_GAP)
+                setNodeAbsolutePosition(datastoreGroup, datastoreX, datastoreY)
                 datastoreX += nodeLocalBox(datastoreGroup).width + NODE_H_GAP
             }
 
@@ -757,6 +766,10 @@ function placeTeam(
         }
 
         rowY += plan.columnRowHeight
+
+        if (plan.layers.length > 0 || plan.sharedDatastores) {
+            rowY += KIND_LAYER_GAP
+        }
     }
 
     for (const layer of plan.layers) {
