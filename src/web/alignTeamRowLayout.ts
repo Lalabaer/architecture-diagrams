@@ -491,10 +491,24 @@ function updateTeamClusterLabel(cluster: SVGGElement, rectX: number, rectY: numb
     label.setAttribute('transform', `translate(${rectX + 12}, ${rectY + 18})`)
 }
 
-function updateTeamClusterRect(svg: SVGSVGElement, cluster: SVGGElement, teamNodes: WebNode[]): void {
+function updateTeamClusterRect(
+    svg: SVGSVGElement,
+    cluster: SVGGElement,
+    teamNodes: WebNode[],
+    fixedBox?: { x: number; y: number; width: number; height: number },
+): void {
     const rect = cluster.querySelector(':scope > rect')
 
     if (!rect) {
+        return
+    }
+
+    if (fixedBox) {
+        rect.setAttribute('x', String(fixedBox.x))
+        rect.setAttribute('y', String(fixedBox.y))
+        rect.setAttribute('width', String(fixedBox.width))
+        rect.setAttribute('height', String(fixedBox.height))
+        updateTeamClusterLabel(cluster, fixedBox.x, fixedBox.y)
         return
     }
 
@@ -731,6 +745,7 @@ function placeTeam(
     originX: number,
     originY: number,
     plan: TeamLayoutPlan,
+    outerHeight = plan.height,
 ): void {
     resetTeamClusterTransforms(svg, teamClusterId(team))
 
@@ -808,7 +823,12 @@ function placeTeam(
     const cluster = findTeamCluster(svg, teamClusterId(team))
 
     if (cluster) {
-        updateTeamClusterRect(svg, cluster, teamNodes)
+        updateTeamClusterRect(svg, cluster, teamNodes, {
+            x: originX,
+            y: originY,
+            width: plan.width,
+            height: outerHeight,
+        })
     }
 }
 
@@ -862,30 +882,52 @@ function dependencyTeamOrder(baseOrder: string[], includedNodes: WebNode[], incl
     })
 }
 
+interface TeamRowItem {
+    team: string
+    teamNodes: WebNode[]
+    plan: TeamLayoutPlan
+}
+
 function placeTeamRows(
     svg: SVGSVGElement,
     teams: [string, WebNode[]][],
     startY: number,
     includedEdges: WebEdge[],
 ): number {
-    let x = DIAGRAM_ORIGIN_X
-    let rowY = startY
-    let rowHeight = 0
-    let bottom = startY
+    const rows: Array<{ items: TeamRowItem[]; width: number; height: number }> = []
+    let current = { items: [] as TeamRowItem[], width: 0, height: 0 }
 
     for (const [team, teamNodes] of teams) {
         const plan = planTeamLayout(svg, teamNodes, includedEdges)
+        const nextWidth = current.items.length === 0 ? plan.width : current.width + MIN_TEAM_GAP + plan.width
 
-        if (x > DIAGRAM_ORIGIN_X && x + plan.width > DIAGRAM_ORIGIN_X + MAX_TEAM_ROW_WIDTH) {
-            x = DIAGRAM_ORIGIN_X
-            rowY += rowHeight + TEAM_ROW_GAP
-            rowHeight = 0
+        if (current.items.length > 0 && nextWidth > MAX_TEAM_ROW_WIDTH) {
+            rows.push(current)
+            current = { items: [], width: 0, height: 0 }
         }
 
-        placeTeam(svg, team, teamNodes, x, rowY, plan)
-        x += plan.width + MIN_TEAM_GAP
-        rowHeight = Math.max(rowHeight, plan.height)
-        bottom = Math.max(bottom, rowY + plan.height)
+        current.items.push({ team, teamNodes, plan })
+        current.width = current.width === 0 ? plan.width : current.width + MIN_TEAM_GAP + plan.width
+        current.height = Math.max(current.height, plan.height)
+    }
+
+    if (current.items.length > 0) {
+        rows.push(current)
+    }
+
+    let rowY = startY
+    let bottom = startY
+
+    for (const row of rows) {
+        let x = DIAGRAM_ORIGIN_X
+
+        for (const item of row.items) {
+            placeTeam(svg, item.team, item.teamNodes, x, rowY, item.plan, row.height)
+            x += item.plan.width + MIN_TEAM_GAP
+        }
+
+        bottom = Math.max(bottom, rowY + row.height)
+        rowY += row.height + TEAM_ROW_GAP
     }
 
     return bottom
