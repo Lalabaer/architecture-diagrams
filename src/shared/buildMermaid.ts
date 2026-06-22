@@ -9,6 +9,11 @@ export interface BuildOptions {
     /** Root graph direction. Default: tb (wide horizontal team bands). */
     diagramLayout?: DiagramLayout
     /**
+     * Split services and datastores into separate layers (services above / left, data below / right).
+     * Default: false (classic — all node kinds per team swimlane).
+     */
+    layered?: boolean
+    /**
      * Which node kinds to include. System is always included.
      * Omit to show all kinds allowed by the current {@link BuildOptions.view}.
      */
@@ -111,48 +116,160 @@ export function buildMermaid(
     // 3) Drop edges that reference nodes we decided not to include (safety)
     edges = edges.filter((e) => includedUids.has(e.from) && includedUids.has(e.to))
 
-    // 4) Build Mermaid
-    const lines: string[] = []
     const layout: DiagramLayout = opts.diagramLayout ?? 'tb'
-
-    if (layout === 'tb') {
-        lines.push(
-            "%%{init: {'securityLevel': 'strict', 'flowchart': {'useMaxWidth': false, 'htmlLabels': false, 'nodeSpacing': 48, 'rankSpacing': 72, 'padding': 20}}}%%",
-        )
-        lines.push('flowchart TB')
-    } else {
-        lines.push(
-            "%%{init: {'securityLevel': 'strict', 'flowchart': {'useMaxWidth': false, 'htmlLabels': false, 'nodeSpacing': 40, 'rankSpacing': 80, 'padding': 16}}}%%",
-        )
-        lines.push('flowchart LR')
-    }
-
+    const layered = opts.layered ?? false
     const includedNodes = [...includedUids].map((uid) => nodesByUid.get(uid)).filter(Boolean) as WebNode[]
-
-    // stable sort
     includedNodes.sort((a, b) => a.uid.localeCompare(b.uid))
 
+    const lines: string[] = []
+    pushInitDirective(lines, layout, layered)
+    lines.push(layout === 'tb' ? 'flowchart TB' : 'flowchart LR')
+
+    if (layered) {
+        emitLayeredSubgraphs(lines, includedNodes, edges, layout)
+    } else {
+        const nodesByTeam = new Map<string, WebNode[]>()
+
+        for (const n of includedNodes) {
+            const team = teamKey(n)
+            const list = nodesByTeam.get(team) ?? []
+            list.push(n)
+            nodesByTeam.set(team, list)
+        }
+
+        const teamEntries = [...nodesByTeam.entries()].sort(([a], [b]) => a.localeCompare(b))
+        appendTeamSwimlanes(lines, teamEntries, layout, hasTeamFilter ? selectedTeams : [])
+    }
+
+    emitEdges(lines, edges, nodesByUid, opts.view, layout, includedNodes)
+
+    const mermaid = lines.join('\n')
+    const isEmpty = includedNodes.length === 0
+
+    return { mermaid, isEmpty, includedNodes, includedEdges: edges }
+}
+
+function pushInitDirective(lines: string[], layout: DiagramLayout, layered: boolean): void {
+    const rankSpacing = layered ? (layout === 'tb' ? 96 : 88) : layout === 'tb' ? 72 : 80
+    const nodeSpacing = layered ? (layout === 'tb' ? 56 : 48) : layout === 'tb' ? 48 : 40
+    const padding = layout === 'tb' ? 20 : 16
+
+    lines.push(
+        `%%{init: {'securityLevel': 'strict', 'flowchart': {'useMaxWidth': false, 'htmlLabels': false, 'nodeSpacing': ${nodeSpacing}, 'rankSpacing': ${rankSpacing}, 'padding': ${padding}}}%%`,
+    )
+}
+
+function emitLayeredSubgraphs(lines: string[], nodes: WebNode[], edges: WebEdge[], layout: DiagramLayout): void {
+    const serviceNodes = nodes.filter((n) => !isDatastoreKind(n.kind))
+    const datastoreNodes = nodes.filter((n) => isDatastoreKind(n.kind))
+    const serviceTeams = sortedTeamEntries(serviceNodes, edges)
+    const dataTeams = sortedTeamEntries(datastoreNodes, edges)
+
+    if (serviceTeams.length > 0) {
+        lines.push('  subgraph layer_services["Services"]')
+        lines.push('    direction TB')
+
+        for (const [team, teamNodes] of serviceTeams) {
+            emitFlatTeamSubgraph(lines, team, teamNodes, layout, '    ', `${teamClusterId(team)}_svc`)
+        }
+
+        lines.push('  end')
+    }
+
+    if (dataTeams.length > 0) {
+        lines.push('  subgraph layer_data["Data"]')
+        lines.push(`    direction ${layout === 'tb' ? 'LR' : 'TB'}`)
+
+        for (const [team, teamNodes] of dataTeams) {
+            emitFlatTeamSubgraph(lines, team, teamNodes, layout, '    ', `${teamClusterId(team)}_data`, false)
+        }
+
+        lines.push('  end')
+    }
+}
+
+function emitFlatTeamSubgraph(
+    lines: string[],
+    team: string,
+    teamNodes: WebNode[],
+    layout: DiagramLayout,
+    indent: string,
+    teamSubgraphId?: string,
+    useInnerLR = true,
+): void {
+    const id = teamSubgraphId ?? teamClusterId(team)
+    lines.push(`${indent}subgraph ${id}["${sanitizeLabel(team)}"]`)
+
+    const innerIndent = `${indent}  `
+    const shouldUseInnerLR = useInnerLR && (layout === 'tb' || teamNodes.length >= 6)
+
+    if (shouldUseInnerLR) {
+        lines.push(`${innerIndent}direction LR`)
+    }
+
+    for (const n of teamNodes) {
+        lines.push(`${innerIndent}${nodeDeclaration(n)}`)
+    }
+
+    lines.push(`${indent}end`)
+}
+
+function sortedTeamEntries(nodes: WebNode[], edges: WebEdge[]): Array<[string, WebNode[]]> {
+    const outDegree = buildOutDegree(edges)
+    const nodesByTeam = partitionByTeam(nodes)
+
+    for (const teamNodes of nodesByTeam.values()) {
+        teamNodes.sort((a, b) => {
+            const degDiff = (outDegree.get(b.uid) ?? 0) - (outDegree.get(a.uid) ?? 0)
+
+            if (degDiff !== 0) {
+                return degDiff
+            }
+
+            return a.uid.localeCompare(b.uid)
+        })
+    }
+
+    return [...nodesByTeam.entries()].sort(([a], [b]) => a.localeCompare(b))
+}
+
+function partitionByTeam(nodes: WebNode[]): Map<string, WebNode[]> {
     const nodesByTeam = new Map<string, WebNode[]>()
 
-    for (const n of includedNodes) {
-        const team = n.owner_team?.trim() || 'Unowned'
+    for (const n of nodes) {
+        const team = teamKey(n)
         const list = nodesByTeam.get(team) ?? []
         list.push(n)
         nodesByTeam.set(team, list)
     }
 
-    const teamEntries = [...nodesByTeam.entries()].sort(([a], [b]) => a.localeCompare(b))
+    return nodesByTeam
+}
 
-    appendTeamSwimlanes(lines, teamEntries, layout, hasTeamFilter ? selectedTeams : [])
+function buildOutDegree(edges: WebEdge[]): Map<string, number> {
+    const outDegree = new Map<string, number>()
 
-    const nodeTeam = new Map(includedNodes.map((n) => [n.uid, n.owner_team?.trim() || 'Unowned']))
+    for (const e of edges) {
+        outDegree.set(e.from, (outDegree.get(e.from) ?? 0) + 1)
+    }
 
-    // edge labels (keep optional, low-noise)
+    return outDegree
+}
+
+function emitEdges(
+    lines: string[],
+    edges: WebEdge[],
+    nodesByUid: Map<string, WebNode>,
+    view: View,
+    layout: DiagramLayout,
+    includedNodes: WebNode[],
+): void {
+    const nodeTeam = new Map(includedNodes.map((n) => [n.uid, teamKey(n)]))
     const edgeGroups = new Map<string, { from: string; to: string; labels: string[] }>()
 
     for (const e of edges) {
         const key = `${e.from}||${e.to}`
-        const edgeLbl = edgeLabel(e.relationship, opts.view)
+        const edgeLbl = edgeLabel(e.relationship, view)
         const existing = edgeGroups.get(key)
 
         if (existing) {
@@ -164,8 +281,9 @@ export function buildMermaid(
 
     let layoutNeutralEdgeIndex = 0
     const layoutNeutralEdges = layout === 'tb'
+    const sortedEdges = [...edgeGroups.values()].sort((a, b) => compareEdges(a, b, nodesByUid))
 
-    for (const { from, to, labels } of edgeGroups.values()) {
+    for (const { from, to, labels } of sortedEdges) {
         const lbl = labels.join(' ')
         const crossTeam = nodeTeam.get(from) !== nodeTeam.get(to)
         const layoutNeutral = layoutNeutralEdges || crossTeam
@@ -185,11 +303,50 @@ export function buildMermaid(
             lines.push(`  ${from} --> ${to}`)
         }
     }
+}
 
-    const mermaid = lines.join('\n')
-    const isEmpty = includedNodes.length === 0
+function compareEdges(
+    a: { from: string; to: string },
+    b: { from: string; to: string },
+    nodesByUid: Map<string, WebNode>,
+): number {
+    const aRank = edgeLayerRank(nodesByUid.get(a.from), nodesByUid.get(a.to))
+    const bRank = edgeLayerRank(nodesByUid.get(b.from), nodesByUid.get(b.to))
 
-    return { mermaid, isEmpty, includedNodes, includedEdges: edges }
+    if (aRank !== bRank) {
+        return aRank - bRank
+    }
+
+    const fromCmp = a.from.localeCompare(b.from)
+
+    if (fromCmp !== 0) {
+        return fromCmp
+    }
+
+    return a.to.localeCompare(b.to)
+}
+
+function edgeLayerRank(from: WebNode | undefined, to: WebNode | undefined): number {
+    const fromDatastore = from ? isDatastoreKind(from.kind) : false
+    const toDatastore = to ? isDatastoreKind(to.kind) : false
+
+    if (!fromDatastore && !toDatastore) {
+        return 0
+    }
+
+    if (!fromDatastore && toDatastore) {
+        return 1
+    }
+
+    return 2
+}
+
+function isDatastoreKind(kind: Kind): boolean {
+    return kind === 'datastore'
+}
+
+function teamKey(n: WebNode): string {
+    return n.owner_team?.trim() || 'Unowned'
 }
 
 /** Vertical layer order inside each team swimlane (top → bottom). */
