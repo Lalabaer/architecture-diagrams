@@ -12,6 +12,7 @@ const TEAM_PAD_X = 12
 const TEAM_PAD_Y = 16
 const TEAM_LABEL_HEIGHT = 24
 const EDGE_LANE_GAP = 12
+const MIN_EDGE_ANCHOR_GAP = 24
 const DIAGRAM_ORIGIN_X = 0
 const DIAGRAM_ORIGIN_Y = 12
 const EDGE_TARGET_GAP = 2
@@ -190,6 +191,32 @@ function spreadAnchor(
     }
 }
 
+function sideSpan(box: { width: number; height: number }, side: ExitSide): number {
+    return side === 'left' || side === 'right' ? box.height : box.width
+}
+
+function anchorSlotCount(box: { width: number; height: number }, side: ExitSide, requestedCount: number): number {
+    if (requestedCount <= 1) {
+        return requestedCount
+    }
+
+    const naturalGap = sideSpan(box, side) / (requestedCount + 1)
+
+    return naturalGap >= MIN_EDGE_ANCHOR_GAP ? requestedCount : 1
+}
+
+function anchorSlotIndex(index: number, requestedCount: number, slotCount: number): number {
+    if (requestedCount <= 1 || slotCount <= 1) {
+        return 0
+    }
+
+    if (slotCount >= requestedCount) {
+        return index
+    }
+
+    return Math.round((index / (requestedCount - 1)) * (slotCount - 1))
+}
+
 function pathMidpoint(d: string): { x: number; y: number } | null {
     const nums = d.match(/[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?/g)?.map(Number)
 
@@ -356,19 +383,23 @@ function rerouteEdgesAfterShift(svg: SVGSVGElement, includedNodes: WebNode[]): v
         const fromLane = (fromIndex - (fromList.length - 1) / 2) * EDGE_LANE_GAP
         const toLane = (toIndex - (toList.length - 1) / 2) * EDGE_LANE_GAP
         const routeLane = fromLane
+        const fromSlotCount = anchorSlotCount(edge.fromBox, edge.fromSide, fromList.length)
+        const toSlotCount = anchorSlotCount(edge.toBox, edge.toSide, toList.length)
+        const fromSlot = anchorSlotIndex(fromIndex, fromList.length, fromSlotCount)
+        const toSlot = anchorSlotIndex(toIndex, toList.length, toSlotCount)
 
-        const start = spreadAnchor(edge.fromBox, edge.fromSide, fromIndex, fromList.length)
-        const end = spreadAnchor(edge.toBox, edge.toSide, toIndex, toList.length, EDGE_TARGET_GAP)
+        const start = spreadAnchor(edge.fromBox, edge.fromSide, fromSlot, fromSlotCount)
+        const end = spreadAnchor(edge.toBox, edge.toSide, toSlot, toSlotCount, EDGE_TARGET_GAP)
 
-        if (edge.fromSide === 'right' || edge.fromSide === 'left') {
+        if (fromSlotCount === fromList.length && (edge.fromSide === 'right' || edge.fromSide === 'left')) {
             start.y += fromLane
-        } else {
+        } else if (fromSlotCount === fromList.length) {
             start.x += fromLane
         }
 
-        if (edge.toSide === 'right' || edge.toSide === 'left') {
+        if (toSlotCount === toList.length && (edge.toSide === 'right' || edge.toSide === 'left')) {
             end.y += toLane
-        } else {
+        } else if (toSlotCount === toList.length) {
             end.x += toLane
         }
 
