@@ -14,7 +14,7 @@ export async function renderHtmlFromTemplate(payload: { graph: WebGraph }): Prom
     const browserBundle = await bundleBrowserApp()
 
     const escapeForJsString = (value: string): string =>
-        value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, '\\n')
+        value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\r?\n/g, '\\n')
 
     // JSON is injected into a JS string literal in the template.
     const graphJsonLiteral = JSON.stringify(payload.graph)

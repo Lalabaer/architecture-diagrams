@@ -5,7 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Architecture Diagram</title>
 
-        <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 
         <link rel="stylesheet" href="./app.css" />
     </head>
@@ -56,16 +56,28 @@
                             <option value="lr">Classic — left-to-right flow</option>
                         </select>
                         <div class="meta" style="margin-top: 6px; font-size: 12px">
-                            Wide stacks teams vertically with horizontal rows. Classic is the original left-to-right
-                            flowchart.
+                            Wide layout: diagram_tier top above the main team row; all other visible teams share one
+                            horizontal row below.
                         </div>
                     </div>
                 </div>
             </div>
 
             <div class="diagramWrap">
-                <div id="diagram"></div>
+                <div class="focusHint" id="focusHint">Click a component to highlight its direct dependencies.</div>
+                <div class="diagramScroll" id="diagramScroll">
+                    <div class="diagramSizer" id="diagramSizer">
+                        <div class="diagramStage" id="diagramStage">
+                            <div id="diagram"></div>
+                        </div>
+                    </div>
+                </div>
                 <div class="emptyHint" id="emptyHint"></div>
+                <div class="zoomControls" aria-label="Diagram zoom">
+                    <button class="zoomBtn" id="zoomIn" type="button" aria-label="Zoom in">+</button>
+                    <span class="zoomLevel" id="zoomLevelLabel" aria-live="polite">100%</span>
+                    <button class="zoomBtn" id="zoomOut" type="button" aria-label="Zoom out">−</button>
+                </div>
             </div>
         </div>
 

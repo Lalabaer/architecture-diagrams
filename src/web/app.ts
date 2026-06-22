@@ -3,7 +3,11 @@ import { buildMermaid, type DiagramLayout } from '../shared/buildMermaid.js'
 import { getTeams, type Kind, KINDS_BY_VIEW, type View, type WebGraph } from '../shared/graph.js'
 import { kindLabel } from '../shared/nodeIcons.js'
 
+import { alignTeamRowLayout } from './alignTeamRowLayout.js'
+import { applyDiagramZoom, attachDiagramZoom, resetDiagramZoomMeasurement } from './diagramZoom.js'
+import { attachNodeFocus } from './nodeFocus.js'
 import { attachNodeTooltips } from './nodeTooltips.js'
+import { attachTeamClusterFilter } from './teamClusterFilter.js'
 
 declare global {
     interface Window {
@@ -234,6 +238,19 @@ function currentView(): View {
 
 let mermaidReady = false
 let renderGeneration = 0
+let detachNodeFocus: (() => void) | null = null
+let detachTeamClusterFilter: (() => void) | null = null
+
+function applyTeamFilterFromDiagram(team: string) {
+    const current = getSelectedTeams()
+    const next = current.includes(team)
+        ? current.filter((t) => t !== team)
+        : [...current, team].sort((a, b) => a.localeCompare(b))
+
+    setSelectedTeams(next)
+    renderChips(next)
+    void render()
+}
 
 function initMermaid() {
     if (mermaidReady) {
@@ -265,7 +282,7 @@ async function render() {
     const diagramLayout = currentLayout()
 
     const visibleKinds = getVisibleKinds(view)
-    const { mermaid, isEmpty, includedNodes } = buildMermaid(graph, {
+    const { mermaid, isEmpty, includedNodes, includedEdges } = buildMermaid(graph, {
         view,
         selectedTeams,
         diagramLayout,
@@ -281,13 +298,19 @@ async function render() {
     }
 
     const container = qs<HTMLDivElement>('#diagram')
-    const diagramWrap = qs<HTMLDivElement>('.diagramWrap')
-    const scrollLeft = diagramWrap.scrollLeft
-    const scrollTop = diagramWrap.scrollTop
+    const diagramScroll = qs<HTMLDivElement>('#diagramScroll')
+    const scrollLeft = diagramScroll.scrollLeft
+    const scrollTop = diagramScroll.scrollTop
     const generation = ++renderGeneration
 
     if (isEmpty) {
+        detachNodeFocus?.()
+        detachNodeFocus = null
+        detachTeamClusterFilter?.()
+        detachTeamClusterFilter = null
         container.replaceChildren()
+        resetDiagramZoomMeasurement()
+        applyDiagramZoom(true)
         return
     }
 
@@ -304,9 +327,37 @@ async function render() {
 
         container.innerHTML = svg
         bindFunctions?.(container)
+
+        if (diagramLayout === 'tb') {
+            alignTeamRowLayout(container.querySelector('svg') ?? container, includedNodes, includedEdges)
+        }
+
         attachNodeTooltips(container, includedNodes)
-        diagramWrap.scrollLeft = Math.min(scrollLeft, Math.max(0, diagramWrap.scrollWidth - diagramWrap.clientWidth))
-        diagramWrap.scrollTop = Math.min(scrollTop, Math.max(0, diagramWrap.scrollHeight - diagramWrap.clientHeight))
+        detachNodeFocus?.()
+        detachTeamClusterFilter?.()
+        detachNodeFocus = attachNodeFocus(
+            container,
+            container.querySelector('svg') ?? container,
+            includedNodes,
+            includedEdges,
+            diagramLayout,
+        )
+        detachTeamClusterFilter = attachTeamClusterFilter(
+            container.querySelector('svg') ?? container,
+            getTeams(graph),
+            selectedTeams,
+            applyTeamFilterFromDiagram,
+        )
+        resetDiagramZoomMeasurement()
+        applyDiagramZoom(true)
+        diagramScroll.scrollLeft = Math.min(
+            scrollLeft,
+            Math.max(0, diagramScroll.scrollWidth - diagramScroll.clientWidth),
+        )
+        diagramScroll.scrollTop = Math.min(
+            scrollTop,
+            Math.max(0, diagramScroll.scrollHeight - diagramScroll.clientHeight),
+        )
     } catch (e: unknown) {
         if (generation === renderGeneration) {
             console.error('Mermaid render error:', e)
@@ -346,6 +397,7 @@ export function boot() {
     renderKindFilters(currentView())
     restoreLayoutFromStorage()
     attachSearch()
+    attachDiagramZoom()
 
     // view switching
     const viewSel = qs<HTMLSelectElement>('#viewSelect')
