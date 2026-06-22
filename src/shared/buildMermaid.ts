@@ -23,10 +23,14 @@ export interface BuildOptions {
  *   - include edges FROM selected-team nodes only
  *   - include target nodes of those edges (even if owned by other teams), but DO NOT expand beyond that
  */
-export function buildMermaid(graph: WebGraph, opts: BuildOptions): {
+export function buildMermaid(
+    graph: WebGraph,
+    opts: BuildOptions,
+): {
     mermaid: string
     isEmpty: boolean
     includedNodes: WebNode[]
+    includedEdges: WebEdge[]
 } {
     const selectedTeams = (opts.selectedTeams ?? []).filter(Boolean)
     const hasTeamFilter = selectedTeams.length > 0
@@ -139,21 +143,9 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): {
 
     const teamEntries = [...nodesByTeam.entries()].sort(([a], [b]) => a.localeCompare(b))
 
-    for (const [team, teamNodes] of teamEntries) {
-        const teamId = `team_${team.replace(/[^a-zA-Z0-9_]/g, '_')}`
-        lines.push(`  subgraph ${teamId}["${sanitizeLabel(team)}"]`)
+    appendTeamSwimlanes(lines, teamEntries, layout, hasTeamFilter ? selectedTeams : [])
 
-        const useInnerLR = layout === 'tb' || teamNodes.length >= 6
-        if (useInnerLR) {
-            lines.push('    direction LR')
-        }
-
-        for (const n of teamNodes) {
-            lines.push(`    ${n.uid}${shape(n.kind)}${nodeLabel(n)}`)
-        }
-
-        lines.push('  end')
-    }
+    const nodeTeam = new Map(includedNodes.map((n) => [n.uid, n.owner_team?.trim() || 'Unowned']))
 
     // edge labels (keep optional, low-noise)
     const edgeGroups = new Map<string, { from: string; to: string; labels: string[] }>()
@@ -170,11 +162,25 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): {
         }
     }
 
+    let layoutNeutralEdgeIndex = 0
+    const layoutNeutralEdges = layout === 'tb'
+
     for (const { from, to, labels } of edgeGroups.values()) {
         const lbl = labels.join(' ')
+        const crossTeam = nodeTeam.get(from) !== nodeTeam.get(to)
+        const layoutNeutral = layoutNeutralEdges || crossTeam
+        const edgeId = layoutNeutral ? `layoutEdge${layoutNeutralEdgeIndex++}` : undefined
 
         if (lbl) {
-            lines.push(`  ${from} -- "${sanitizeLabel(lbl)}" --> ${to}`)
+            if (edgeId) {
+                lines.push(`  ${from} ${edgeId}@-- "${sanitizeLabel(lbl)}" --> ${to}`)
+                lines.push(`  ${edgeId}@{ constraint: false }`)
+            } else {
+                lines.push(`  ${from} -- "${sanitizeLabel(lbl)}" --> ${to}`)
+            }
+        } else if (edgeId) {
+            lines.push(`  ${from} ${edgeId}@--> ${to}`)
+            lines.push(`  ${edgeId}@{ constraint: false }`)
         } else {
             lines.push(`  ${from} --> ${to}`)
         }
@@ -183,7 +189,171 @@ export function buildMermaid(graph: WebGraph, opts: BuildOptions): {
     const mermaid = lines.join('\n')
     const isEmpty = includedNodes.length === 0
 
-    return { mermaid, isEmpty, includedNodes }
+    return { mermaid, isEmpty, includedNodes, includedEdges: edges }
+}
+
+/** Vertical layer order inside each team swimlane (top → bottom). */
+const KIND_LAYERS: Kind[] = ['system', 'library', 'tool', 'datastore']
+
+function groupNodesByKind(nodes: WebNode[]): Map<Kind, WebNode[]> {
+    const byKind = new Map<Kind, WebNode[]>()
+
+    for (const n of nodes) {
+        const list = byKind.get(n.kind) ?? []
+        list.push(n)
+        byKind.set(n.kind, list)
+    }
+
+    for (const list of byKind.values()) {
+        list.sort((a, b) => a.uid.localeCompare(b.uid))
+    }
+
+    return byKind
+}
+
+function nodeDeclaration(n: WebNode): string {
+    return `${n.uid}${shape(n.kind)}${nodeLabel(n)}`
+}
+
+/** Mermaid subgraph id for the horizontal row of owner-team swimlanes (layout shell, not a filter target). */
+export const TEAMS_ROW_CLUSTER_ID = 'teams_row'
+
+/** Mermaid subgraph id for an owner team swimlane (must stay in sync with attachTeamClusterFilter). */
+export function teamClusterId(ownerTeam: string): string {
+    return `team_${ownerTeam.replace(/[^a-zA-Z0-9_]/g, '_')}`
+}
+
+function isTopRowTeam(teamNodes: WebNode[]): boolean {
+    return teamNodes.length > 0 && teamNodes.every((n) => n.diagram_tier === 'top')
+}
+
+function partitionTeamsByDiagramTier(teamEntries: [string, WebNode[]][]): {
+    topRowTeams: [string, WebNode[]][]
+    rowTeams: [string, WebNode[]][]
+} {
+    const topRowTeams: [string, WebNode[]][] = []
+    const rowTeams: [string, WebNode[]][] = []
+
+    for (const entry of teamEntries) {
+        if (isTopRowTeam(entry[1])) {
+            topRowTeams.push(entry)
+        } else {
+            rowTeams.push(entry)
+        }
+    }
+
+    return { topRowTeams, rowTeams }
+}
+
+function orderTeamEntriesForFilter(teamEntries: [string, WebNode[]][], selectedTeams: string[]): [string, WebNode[]][] {
+    if (selectedTeams.length === 0) {
+        return teamEntries
+    }
+
+    const teamSet = new Set(selectedTeams.map((t) => t.trim()).filter(Boolean))
+    const selected: [string, WebNode[]][] = []
+    const external: [string, WebNode[]][] = []
+
+    for (const entry of teamEntries) {
+        if (teamSet.has(entry[0])) {
+            selected.push(entry)
+        } else {
+            external.push(entry)
+        }
+    }
+
+    return [...selected, ...external]
+}
+
+function appendHorizontalTeamRow(
+    lines: string[],
+    clusterId: string,
+    rowTeams: [string, WebNode[]][],
+    indent = '  ',
+): void {
+    if (rowTeams.length === 0) {
+        return
+    }
+
+    const childIndent = `${indent}  `
+    lines.push(`${indent}subgraph ${clusterId}[" "]`)
+    lines.push(`${childIndent}direction LR`)
+
+    for (const [team, teamNodes] of rowTeams) {
+        appendTeamSubgraph(lines, team, teamNodes, childIndent)
+    }
+
+    lines.push(`${indent}end`)
+}
+
+function appendTeamSwimlanes(
+    lines: string[],
+    teamEntries: [string, WebNode[]][],
+    layout: DiagramLayout,
+    selectedTeams: string[] = [],
+): void {
+    if (layout !== 'tb') {
+        for (const [team, teamNodes] of teamEntries) {
+            appendTeamSubgraph(lines, team, teamNodes)
+        }
+
+        return
+    }
+
+    const hasTeamFilter = selectedTeams.length > 0
+    const layoutTeams = hasTeamFilter ? orderTeamEntriesForFilter(teamEntries, selectedTeams) : teamEntries
+    const { topRowTeams, rowTeams } = partitionTeamsByDiagramTier(layoutTeams)
+
+    for (const [team, teamNodes] of topRowTeams) {
+        appendTeamSubgraph(lines, team, teamNodes)
+    }
+
+    if (rowTeams.length === 0) {
+        return
+    }
+
+    appendHorizontalTeamRow(lines, TEAMS_ROW_CLUSTER_ID, rowTeams)
+}
+
+function appendTeamSubgraph(lines: string[], team: string, teamNodes: WebNode[], indent = '  '): void {
+    const teamId = teamClusterId(team)
+    const nodesByKind = groupNodesByKind(teamNodes)
+    const presentLayers = KIND_LAYERS.filter((kind) => (nodesByKind.get(kind)?.length ?? 0) > 0)
+    const child = `${indent}  `
+
+    lines.push(`${indent}subgraph ${teamId}["${sanitizeLabel(team)}"]`)
+
+    if (presentLayers.length <= 1) {
+        const layerNodes = presentLayers.length === 1 ? nodesByKind.get(presentLayers[0])! : teamNodes
+
+        lines.push(`${child}direction LR`)
+
+        for (const n of layerNodes) {
+            lines.push(`${child}${nodeDeclaration(n)}`)
+        }
+    } else {
+        lines.push(`${child}direction TB`)
+
+        for (const kind of presentLayers) {
+            const layerNodes = nodesByKind.get(kind)!
+
+            if (layerNodes.length === 0) {
+                continue
+            }
+
+            const layerId = `${teamId}_${kind}`
+            lines.push(`${child}subgraph ${layerId}[" "]`)
+            lines.push(`${child}  direction LR`)
+
+            for (const n of layerNodes) {
+                lines.push(`${child}  ${nodeDeclaration(n)}`)
+            }
+
+            lines.push(`${child}end`)
+        }
+    }
+
+    lines.push(`${indent}end`)
 }
 
 function shape(kind: WebNode['kind']): string {

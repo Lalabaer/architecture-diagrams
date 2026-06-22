@@ -1,4 +1,4 @@
-/** Mermaid init options for the interactive diagram viewer (Mermaid 10, base theme). */
+/** Mermaid init options for the interactive diagram viewer (Mermaid 11, base theme). */
 export const MERMAID_CONFIG = {
     startOnLoad: false,
     securityLevel: 'strict' as const,
