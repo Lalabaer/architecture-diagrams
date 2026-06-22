@@ -1,0 +1,12 @@
+{
+    "teams": {
+        "platform-engineering": {
+            "slack": "#platform-engineering",
+            "email": "platform-engineering@company.com"
+        },
+        "core-infra": {
+            "slack": "#infra",
+            "email": "infra@company.com"
+        }
+    }
+}
