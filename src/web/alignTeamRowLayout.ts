@@ -539,13 +539,101 @@ interface TeamLayerLayout {
     rowHeight: number
 }
 
+interface TeamColumnLayout {
+    system: WebNode
+    datastores: WebNode[]
+    width: number
+    height: number
+    systemHeight: number
+    datastoreRowWidth: number
+    datastoreRowHeight: number
+}
+
 interface TeamLayoutPlan {
     width: number
     height: number
     layers: TeamLayerLayout[]
+    columns: TeamColumnLayout[]
+    sharedDatastores: TeamLayerLayout | null
+    columnRowHeight: number
 }
 
-function planTeamLayout(svg: SVGSVGElement, teamNodes: WebNode[]): TeamLayoutPlan {
+function nodeSize(svg: SVGSVGElement, node: WebNode): { width: number; height: number } {
+    const group = findNodeGroup(svg, node.uid)
+
+    if (!group) {
+        return { width: 0, height: 0 }
+    }
+
+    const size = nodeLocalBox(group)
+
+    return { width: size.width, height: size.height }
+}
+
+function rowMetrics(svg: SVGSVGElement, nodes: WebNode[]): { rowWidth: number; rowHeight: number } {
+    let rowWidth = 0
+    let rowHeight = 0
+
+    for (const node of nodes) {
+        const size = nodeSize(svg, node)
+        rowWidth += size.width + NODE_H_GAP
+        rowHeight = Math.max(rowHeight, size.height)
+    }
+
+    return {
+        rowWidth: Math.max(0, rowWidth - NODE_H_GAP),
+        rowHeight,
+    }
+}
+
+function columnsWidth(columns: TeamColumnLayout[]): number {
+    return Math.max(0, columns.reduce((sum, column) => sum + column.width + NODE_H_GAP, 0) - NODE_H_GAP)
+}
+
+function serviceDatastoresByUid(teamNodes: WebNode[], includedEdges: WebEdge[]): Map<string, WebNode[]> {
+    const nodesByUid = new Map(teamNodes.map((node) => [node.uid, node]))
+    const ownersByDatastore = new Map<string, Set<string>>()
+
+    for (const edge of includedEdges) {
+        const from = nodesByUid.get(edge.from)
+        const to = nodesByUid.get(edge.to)
+
+        if (!from || !to || from.kind !== 'system' || to.kind !== 'datastore') {
+            continue
+        }
+
+        const owners = ownersByDatastore.get(to.uid) ?? new Set<string>()
+        owners.add(from.uid)
+        ownersByDatastore.set(to.uid, owners)
+    }
+
+    const byService = new Map<string, WebNode[]>()
+
+    for (const [datastoreUid, owners] of ownersByDatastore) {
+        if (owners.size !== 1) {
+            continue
+        }
+
+        const datastore = nodesByUid.get(datastoreUid)
+        const serviceUid = [...owners][0]
+
+        if (!datastore) {
+            continue
+        }
+
+        const list = byService.get(serviceUid) ?? []
+        list.push(datastore)
+        byService.set(serviceUid, list)
+    }
+
+    for (const list of byService.values()) {
+        list.sort((a, b) => a.uid.localeCompare(b.uid))
+    }
+
+    return byService
+}
+
+function planTeamLayout(svg: SVGSVGElement, teamNodes: WebNode[], includedEdges: WebEdge[]): TeamLayoutPlan {
     const byKind = new Map<Kind, WebNode[]>()
 
     for (const node of teamNodes) {
@@ -558,35 +646,75 @@ function planTeamLayout(svg: SVGSVGElement, teamNodes: WebNode[]): TeamLayoutPla
         list.sort((a, b) => a.uid.localeCompare(b.uid))
     }
 
+    const systemNodes = byKind.get('system') ?? []
+    const datastoreNodes = byKind.get('datastore') ?? []
+    const datastoresByService = serviceDatastoresByUid(teamNodes, includedEdges)
+    const assignedDatastoreUids = new Set([...datastoresByService.values()].flat().map((node) => node.uid))
+    const sharedDatastores = datastoreNodes.filter((node) => !assignedDatastoreUids.has(node.uid))
+    const columns: TeamColumnLayout[] = []
+    let columnRowWidth = 0
+    let columnRowHeight = 0
+
+    for (const system of systemNodes) {
+        const systemSize = nodeSize(svg, system)
+        const datastores = datastoresByService.get(system.uid) ?? []
+        const datastoreMetrics = rowMetrics(svg, datastores)
+        const hasDatastores = datastores.length > 0
+        const height = systemSize.height + (hasDatastores ? KIND_LAYER_GAP + datastoreMetrics.rowHeight : 0)
+        const width = Math.max(systemSize.width, datastoreMetrics.rowWidth)
+
+        columns.push({
+            system,
+            datastores,
+            width,
+            height,
+            systemHeight: systemSize.height,
+            datastoreRowWidth: datastoreMetrics.rowWidth,
+            datastoreRowHeight: datastoreMetrics.rowHeight,
+        })
+        columnRowWidth += width + NODE_H_GAP
+        columnRowHeight = Math.max(columnRowHeight, height)
+    }
+
+    columnRowWidth = Math.max(0, columnRowWidth - NODE_H_GAP)
+
     const presentLayers = KIND_LAYERS.filter((kind) => (byKind.get(kind)?.length ?? 0) > 0)
     const layers: TeamLayerLayout[] = []
     let width = TEAM_PAD_X * 2
     let height = TEAM_PAD_Y * 2 + TEAM_LABEL_HEIGHT
 
     for (const kind of presentLayers) {
-        const nodes = byKind.get(kind)!
-        let rowWidth = 0
-        let rowHeight = 0
-
-        for (const node of nodes) {
-            const group = findNodeGroup(svg, node.uid)
-
-            if (!group) {
-                continue
-            }
-
-            const size = nodeLocalBox(group)
-            rowWidth += size.width + NODE_H_GAP
-            rowHeight = Math.max(rowHeight, size.height)
+        if (systemNodes.length > 0 && (kind === 'system' || kind === 'datastore')) {
+            continue
         }
 
-        rowWidth = Math.max(0, rowWidth - NODE_H_GAP)
+        const nodes = byKind.get(kind)!
+        const { rowWidth, rowHeight } = rowMetrics(svg, nodes)
         width = Math.max(width, rowWidth + TEAM_PAD_X * 2)
         layers.push({ kind, nodes, rowWidth, rowHeight })
         height += rowHeight + (layers.length > 1 ? KIND_LAYER_GAP : 0)
     }
 
-    return { width, height, layers }
+    const sharedDatastoreLayer =
+        sharedDatastores.length > 0
+            ? {
+                  kind: 'datastore' as const,
+                  nodes: sharedDatastores,
+                  ...rowMetrics(svg, sharedDatastores),
+              }
+            : null
+
+    if (columns.length > 0) {
+        width = Math.max(width, columnRowWidth + TEAM_PAD_X * 2)
+        height += columnRowHeight
+    }
+
+    if (sharedDatastoreLayer) {
+        width = Math.max(width, sharedDatastoreLayer.rowWidth + TEAM_PAD_X * 2)
+        height += (columns.length > 0 || layers.length > 0 ? KIND_LAYER_GAP : 0) + sharedDatastoreLayer.rowHeight
+    }
+
+    return { width, height, layers, columns, sharedDatastores: sharedDatastoreLayer, columnRowHeight }
 }
 
 function placeTeam(
@@ -600,18 +728,39 @@ function placeTeam(
     resetTeamClusterTransforms(svg, teamClusterId(team))
 
     let rowY = originY + TEAM_PAD_Y + TEAM_LABEL_HEIGHT
-    let serviceRowWidth = 0
+
+    if (plan.columns.length > 0) {
+        let columnX = originX + TEAM_PAD_X + Math.max(0, (plan.width - TEAM_PAD_X * 2 - columnsWidth(plan.columns)) / 2)
+
+        for (const column of plan.columns) {
+            const systemGroup = findNodeGroup(svg, column.system.uid)
+
+            if (systemGroup) {
+                const systemSize = nodeLocalBox(systemGroup)
+                setNodeAbsolutePosition(systemGroup, columnX + (column.width - systemSize.width) / 2, rowY)
+            }
+
+            let datastoreX = columnX + Math.max(0, (column.width - column.datastoreRowWidth) / 2)
+
+            for (const datastore of column.datastores) {
+                const datastoreGroup = findNodeGroup(svg, datastore.uid)
+
+                if (!datastoreGroup) {
+                    continue
+                }
+
+                setNodeAbsolutePosition(datastoreGroup, datastoreX, rowY + column.systemHeight + KIND_LAYER_GAP)
+                datastoreX += nodeLocalBox(datastoreGroup).width + NODE_H_GAP
+            }
+
+            columnX += column.width + NODE_H_GAP
+        }
+
+        rowY += plan.columnRowHeight
+    }
 
     for (const layer of plan.layers) {
-        let rowX = originX + TEAM_PAD_X
-
-        if (layer.kind === 'datastore' && plan.layers.some((entry) => entry.kind === 'system')) {
-            rowX = originX + TEAM_PAD_X + Math.max(0, (serviceRowWidth - layer.rowWidth) / 2)
-        }
-
-        if (layer.kind === 'system') {
-            serviceRowWidth = layer.rowWidth
-        }
+        let rowX = originX + TEAM_PAD_X + Math.max(0, (plan.width - TEAM_PAD_X * 2 - layer.rowWidth) / 2)
 
         for (const node of layer.nodes) {
             const group = findNodeGroup(svg, node.uid)
@@ -625,6 +774,22 @@ function placeTeam(
         }
 
         rowY += layer.rowHeight + KIND_LAYER_GAP
+    }
+
+    if (plan.sharedDatastores) {
+        let rowX =
+            originX + TEAM_PAD_X + Math.max(0, (plan.width - TEAM_PAD_X * 2 - plan.sharedDatastores.rowWidth) / 2)
+
+        for (const node of plan.sharedDatastores.nodes) {
+            const group = findNodeGroup(svg, node.uid)
+
+            if (!group) {
+                continue
+            }
+
+            setNodeAbsolutePosition(group, rowX, rowY)
+            rowX += nodeLocalBox(group).width + NODE_H_GAP
+        }
     }
 
     const cluster = findTeamCluster(svg, teamClusterId(team))
@@ -684,14 +849,19 @@ function dependencyTeamOrder(baseOrder: string[], includedNodes: WebNode[], incl
     })
 }
 
-function placeTeamRows(svg: SVGSVGElement, teams: [string, WebNode[]][], startY: number): number {
+function placeTeamRows(
+    svg: SVGSVGElement,
+    teams: [string, WebNode[]][],
+    startY: number,
+    includedEdges: WebEdge[],
+): number {
     let x = DIAGRAM_ORIGIN_X
     let rowY = startY
     let rowHeight = 0
     let bottom = startY
 
     for (const [team, teamNodes] of teams) {
-        const plan = planTeamLayout(svg, teamNodes)
+        const plan = planTeamLayout(svg, teamNodes, includedEdges)
 
         if (x > DIAGRAM_ORIGIN_X && x + plan.width > DIAGRAM_ORIGIN_X + MAX_TEAM_ROW_WIDTH) {
             x = DIAGRAM_ORIGIN_X
@@ -732,11 +902,11 @@ function layoutTeamsFromScratch(svg: SVGSVGElement, includedNodes: WebNode[], in
     let topRowBottom = DIAGRAM_ORIGIN_Y
 
     if (topTeams.length > 0) {
-        topRowBottom = placeTeamRows(svg, topTeams, DIAGRAM_ORIGIN_Y)
+        topRowBottom = placeTeamRows(svg, topTeams, DIAGRAM_ORIGIN_Y, includedEdges)
         mainRowY = topRowBottom + ROW_GAP_BELOW_TOP
     }
 
-    placeTeamRows(svg, rowTeams, mainRowY)
+    placeTeamRows(svg, rowTeams, mainRowY, includedEdges)
 }
 
 function outerTeamClusterRect(cluster: SVGGElement): { x: number; y: number; width: number; height: number } | null {
