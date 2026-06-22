@@ -12,6 +12,9 @@ export type Relationship =
 
 export type View = 'architecture' | 'technical'
 
+/** Wide-layout swimlane row; comes from manifest entity.diagram_tier (defaults to main). */
+export type DiagramTier = 'top' | 'main'
+
 /** Kinds that can appear in each diagram view (used for the type filter UI). */
 export const KINDS_BY_VIEW: Record<View, Kind[]> = {
     architecture: ['system', 'datastore'],
@@ -23,6 +26,7 @@ export interface WebNode {
     id: string // raw id, e.g. "playback-service"
     kind: Kind
     owner_team?: string
+    diagram_tier?: DiagramTier
     name?: string
     description?: string
     business_critical?: boolean

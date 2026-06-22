@@ -1,5 +1,8 @@
 export type Kind = 'system' | 'library' | 'datastore' | 'tool'
 
+/** Wide-layout swimlane row; declared per entity in manifests (not hardcoded by team name). */
+export type DiagramTier = 'top' | 'main'
+
 export type Relationship =
     | 'sync_call'
     | 'async_event'
@@ -16,6 +19,7 @@ export interface Entity {
     name?: string
     description?: string
     owner_team?: string
+    diagram_tier?: DiagramTier
     business_critical?: boolean
     in_production?: boolean
     deprecated?: boolean
@@ -45,6 +49,7 @@ export interface GraphNode {
     label: string
     description?: string
     owner_team?: string
+    diagram_tier?: DiagramTier
     business_critical?: boolean
     in_production?: boolean
     deprecated?: boolean

@@ -42,6 +42,7 @@ export function toWebGraph(internalGraph: any): WebGraph {
                 name: n.name ?? n.label,
                 description: n.description,
                 owner_team: n.owner_team,
+                diagram_tier: n.diagram_tier,
                 business_critical: n.business_critical,
                 in_production: n.in_production,
                 deprecated: n.deprecated,
