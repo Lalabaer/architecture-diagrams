@@ -145,8 +145,6 @@ export function buildMermaid(
 
     appendTeamSwimlanes(lines, teamEntries, layout, hasTeamFilter ? selectedTeams : [])
 
-    const nodeTeam = new Map(includedNodes.map((n) => [n.uid, n.owner_team?.trim() || 'Unowned']))
-
     // edge labels (keep optional, low-noise)
     const edgeGroups = new Map<string, { from: string; to: string; labels: string[] }>()
 
@@ -162,25 +160,11 @@ export function buildMermaid(
         }
     }
 
-    let layoutNeutralEdgeIndex = 0
-    const layoutNeutralEdges = layout === 'tb'
-
     for (const { from, to, labels } of edgeGroups.values()) {
         const lbl = labels.join(' ')
-        const crossTeam = nodeTeam.get(from) !== nodeTeam.get(to)
-        const layoutNeutral = layoutNeutralEdges || crossTeam
-        const edgeId = layoutNeutral ? `layoutEdge${layoutNeutralEdgeIndex++}` : undefined
 
         if (lbl) {
-            if (edgeId) {
-                lines.push(`  ${from} ${edgeId}@-- "${sanitizeLabel(lbl)}" --> ${to}`)
-                lines.push(`  ${edgeId}@{ constraint: false }`)
-            } else {
-                lines.push(`  ${from} -- "${sanitizeLabel(lbl)}" --> ${to}`)
-            }
-        } else if (edgeId) {
-            lines.push(`  ${from} ${edgeId}@--> ${to}`)
-            lines.push(`  ${edgeId}@{ constraint: false }`)
+            lines.push(`  ${from} -- "${sanitizeLabel(lbl)}" --> ${to}`)
         } else {
             lines.push(`  ${from} --> ${to}`)
         }
@@ -193,7 +177,7 @@ export function buildMermaid(
 }
 
 /** Vertical layer order inside each team swimlane (top → bottom). */
-const KIND_LAYERS: Kind[] = ['system', 'library', 'tool', 'datastore']
+export const KIND_LAYERS: Kind[] = ['system', 'library', 'tool', 'datastore']
 
 function groupNodesByKind(nodes: WebNode[]): Map<Kind, WebNode[]> {
     const byKind = new Map<Kind, WebNode[]>()
